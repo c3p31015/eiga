@@ -11,7 +11,6 @@ import {
 import {
   formatTimeRange,
   type ActivityAssignment,
-  type ActivityPeriod,
   type Attendance,
   type AttendanceStatus,
 } from '../lib/activity'
