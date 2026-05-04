@@ -58,7 +58,6 @@ export default function ApplicationPage() {
   const [activityDays, setActivityDays] = useState<ActivityDay[]>([])
   const [preferences, setPreferences] = useState<DatePreference[]>([])
   const [loading, setLoading] = useState(true)
-  const [busyDate, setBusyDate] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
 
@@ -95,9 +94,9 @@ export default function ApplicationPage() {
     return m
   }, [myPreferences])
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!user) return
-    setLoading(true)
+    if (!options.silent) setLoading(true)
     const { data: periodIdData, error: ensureError } = await supabase.rpc('ensure_period', {
       p_year: viewYear,
       p_month: viewMonth + 1,
@@ -131,7 +130,7 @@ export default function ApplicationPage() {
     setActivityDays((daysRes.data as ActivityDay[]) ?? [])
     setPreferences((preferencesRes.data as DatePreference[]) ?? [])
 
-    setLoading(false)
+    if (!options.silent) setLoading(false)
   }, [viewYear, viewMonth, user])
 
   useEffect(() => {
@@ -169,10 +168,45 @@ export default function ApplicationPage() {
         p_dates: dates,
       })
       if (error) return `希望の保存に失敗しました: ${error.message}`
-      await fetchData()
+      await fetchData({ silent: true })
       return null
     },
     [period, fetchData]
+  )
+
+  const applyOptimisticOrder = useCallback(
+    (orderedDates: string[]) => {
+      if (!user || !period) return
+      const newRankByDate = new Map<string, number>()
+      orderedDates.forEach((d, i) => newRankByDate.set(d, i + 1))
+      setPreferences((prev) => {
+        // 自分以外の prefs はそのまま、自分の prefs は new rank に並び替え
+        const others = prev.filter((p) => p.user_id !== user.id)
+        const mineByDate = new Map(
+          prev.filter((p) => p.user_id === user.id).map((p) => [p.date, p])
+        )
+        const mineNew: DatePreference[] = orderedDates.map((d, i) => {
+          const existing = mineByDate.get(d)
+          if (existing) return { ...existing, rank: i + 1 }
+          // 新規追加: 一時的なIDで埋める（silent refetchで実IDに置換）
+          return {
+            id: `temp-${d}`,
+            period_id: period.id,
+            user_id: user.id,
+            date: d,
+            rank: i + 1,
+            movie_title: null,
+            movie_start_time: null,
+            movie_duration_minutes: null,
+            movie_genre: null,
+            movie_watch_url: null,
+            movie_description: null,
+          }
+        })
+        return [...others, ...mineNew]
+      })
+    },
+    [user, period]
   )
 
   const togglePreferenceDate = useCallback(
@@ -180,25 +214,30 @@ export default function ApplicationPage() {
       const ordered = myPreferences.map((p) => p.date)
       const exists = ordered.includes(date)
       const next = exists ? ordered.filter((d) => d !== date) : [...ordered, date]
-      setBusyDate(date)
-      const err = await savePreferenceDates(next)
-      setBusyDate(null)
-      if (err) {
-        flashError(err)
-        return
-      }
-      // 新規追加なら自動展開、削除なら展開状態をクリア
+      const before = preferences
+
+      // 楽観更新
+      applyOptimisticOrder(next)
       setExpandedDates((prev) => {
         const newSet = new Set(prev)
-        if (exists) {
-          newSet.delete(date)
-        } else {
-          newSet.add(date)
-        }
+        if (exists) newSet.delete(date)
+        else newSet.add(date)
         return newSet
       })
+
+      const err = await savePreferenceDates(next)
+      if (err) {
+        setPreferences(before)
+        setExpandedDates((prev) => {
+          const newSet = new Set(prev)
+          if (exists) newSet.add(date)
+          else newSet.delete(date)
+          return newSet
+        })
+        flashError(err)
+      }
     },
-    [myPreferences, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
   )
 
   const moveRank = useCallback(
@@ -209,32 +248,41 @@ export default function ApplicationPage() {
       const newIdx = idx + direction
       if (newIdx < 0 || newIdx >= ordered.length) return
       ;[ordered[idx], ordered[newIdx]] = [ordered[newIdx], ordered[idx]]
-      setBusyDate(date)
+      const before = preferences
+
+      // 楽観更新で即時反映
+      applyOptimisticOrder(ordered)
+
       const err = await savePreferenceDates(ordered)
-      setBusyDate(null)
-      if (err) flashError(err)
+      if (err) {
+        setPreferences(before)
+        flashError(err)
+      }
     },
-    [myPreferences, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
   )
 
   const removePreference = useCallback(
     async (date: string): Promise<string | null> => {
       const ordered = myPreferences.map((p) => p.date).filter((d) => d !== date)
-      setBusyDate(date)
-      const err = await savePreferenceDates(ordered)
-      setBusyDate(null)
-      if (err) {
-        flashError(err)
-        return err
-      }
+      const before = preferences
+
+      applyOptimisticOrder(ordered)
       setExpandedDates((prev) => {
         const newSet = new Set(prev)
         newSet.delete(date)
         return newSet
       })
+
+      const err = await savePreferenceDates(ordered)
+      if (err) {
+        setPreferences(before)
+        flashError(err)
+        return err
+      }
       return null
     },
-    [myPreferences, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
   )
 
   const saveDateWish = useCallback(
@@ -251,7 +299,7 @@ export default function ApplicationPage() {
         p_description: payload.description || null,
       })
       if (error) return `映画情報の保存に失敗しました: ${error.message}`
-      await fetchData()
+      await fetchData({ silent: true })
       return null
     },
     [period, fetchData]
@@ -378,7 +426,6 @@ export default function ApplicationPage() {
                     const roomLabel = isActivity ? activity.room : null
                     const myRank = myRankByDate.get(dateStr) ?? null
                     const movieFilled = myMovieFilledByDate.get(dateStr) ?? false
-                    const cellBusy = busyDate === dateStr
                     const tappable = isActivity && canEdit
 
                     let cellClass = 'border-line bg-card opacity-40 cursor-not-allowed'
@@ -402,7 +449,7 @@ export default function ApplicationPage() {
                       <button
                         key={di}
                         onClick={() => tappable && togglePreferenceDate(dateStr)}
-                        disabled={!tappable || cellBusy}
+                        disabled={!tappable}
                         className={`relative aspect-square rounded-lg border p-1.5 flex flex-col items-center justify-between text-center transition-all ${
                           tappable ? 'active:scale-95' : ''
                         } ${cellClass}`}
@@ -492,7 +539,7 @@ export default function ApplicationPage() {
                     isFirst={idx === 0}
                     isLast={idx === myPreferences.length - 1}
                     expanded={expandedDates.has(pref.date)}
-                    disabled={!canEdit || busyDate === pref.date}
+                    disabled={!canEdit}
                     onToggleExpand={() => toggleExpand(pref.date)}
                     onMoveUp={() => moveRank(pref.date, -1)}
                     onMoveDown={() => moveRank(pref.date, 1)}
