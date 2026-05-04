@@ -155,3 +155,13 @@ export function PinIcon({ size = 16, className }: IconProps) {
     </svg>
   )
 }
+
+export function AlertIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M12 2L2 21h20L12 2z" />
+      <path d="M12 9v5" />
+      <path d="M12 17h.01" />
+    </svg>
+  )
+}

@@ -47,17 +47,13 @@ export type DatePreference = {
   user_id: string
   date: string
   rank: number
+  movie_title: string | null
+  movie_start_time: string | null
+  movie_duration_minutes: number | null
+  movie_genre: string | null
+  movie_watch_url: string | null
+  movie_description: string | null
   profiles?: { display_name: string } | null
-}
-
-export type MovieWish = {
-  period_id: string
-  user_id: string
-  movie_title: string
-  movie_url: string | null
-  movie_note: string | null
-  created_at?: string
-  updated_at?: string
 }
 
 export type ActivityAssignment = {
@@ -70,6 +66,7 @@ export type ActivityAssignment = {
   movie_genre: string | null
   movie_poster_url: string | null
   movie_watch_url: string | null
+  movie_start_time: string | null
   locked_at: string
   movie_updated_at: string | null
   profiles?: { display_name: string } | null

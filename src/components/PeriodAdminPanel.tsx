@@ -69,18 +69,46 @@ export default function PeriodAdminPanel() {
 
   const saveDeadline = async () => {
     if (!period) return
-    setSaving(true)
     const newDeadline = inputValueToDeadline(deadlineInput)
+    const willBeFuture = new Date(newDeadline).getTime() > Date.now()
+
+    let alsoUnlock = false
+    if (period.locked_at && willBeFuture) {
+      alsoUnlock = confirm(
+        'この期間は集計済み（ロック済み）です。\n' +
+          '締切を未来に伸ばすだけでは再受付されません。\n\n' +
+          'ロックも解除して希望提出を再受付しますか？\n' +
+          '・OK: ロック解除（確定済みの主催者割り当てが削除され、再受付状態に戻ります）\n' +
+          '・キャンセル: 締切のみ更新（ロック状態は維持）'
+      )
+    }
+
+    setSaving(true)
     const { error: updateError } = await supabase
       .from('activity_periods')
       .update({ deadline_at: newDeadline })
       .eq('id', period.id)
-    setSaving(false)
     if (updateError) {
+      setSaving(false)
       flash(`更新に失敗しました: ${updateError.message}`, true)
       return
     }
-    flash('締切日を更新しました')
+
+    if (alsoUnlock) {
+      const { error: rpcError } = await supabase.rpc('unlock_activity_period', {
+        p_period_id: period.id,
+      })
+      setSaving(false)
+      if (rpcError) {
+        flash(`ロック解除に失敗しました: ${rpcError.message}`, true)
+        fetchPeriod()
+        return
+      }
+      flash('締切を更新し、ロックを解除しました')
+    } else {
+      setSaving(false)
+      flash('締切日を更新しました')
+    }
     fetchPeriod()
   }
 
@@ -232,7 +260,7 @@ export default function PeriodAdminPanel() {
               </p>
               {period.locked_at && (
                 <p className="mt-1 text-[11px] text-accent">
-                  ※ 集計済みのため、締切を変更しても新規希望は受け付けられません。再受付するには下のロック解除を実行してください。
+                  ※ 集計済み（ロック済み）の状態です。締切を未来に伸ばして「保存」を押すと、ロック解除も併せて行うか確認されます。締切のみ変更する場合は確認でキャンセルを選んでください。
                 </p>
               )}
             </div>

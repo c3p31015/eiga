@@ -460,19 +460,15 @@ export default function CalendarPage() {
 
       {selectedDate && selectedActivity?.active && (
         <DayPreferenceModal
-          mode="view"
           dateStr={selectedDate}
           currentUserId={user?.id ?? null}
-          period={period}
           activityStart={selectedActivity.start_time}
           activityEnd={selectedActivity.end_time}
           activityRoom={selectedActivity.room}
-          myPreferences={[]}
-          preferencesForDate={[]}
           assignment={selectedAssignment}
           hostName={selectedHostName}
           attendances={attendancesByDate.get(selectedDate) ?? []}
-          onSavePreferences={async () => null}
+          periodLocked={periodLocked}
           onAttendanceChange={setAttendance}
           onAssignmentSaved={fetchData}
           onClose={() => setSelectedDate(null)}

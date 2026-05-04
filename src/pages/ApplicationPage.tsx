@@ -1,19 +1,17 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import DayPreferenceModal from '../components/DayPreferenceModal'
-import { ChevronLeftIcon, ChevronRightIcon, FilmIcon } from '../components/icons'
+import PreferenceDateCard, { type DateWishPayload } from '../components/PreferenceDateCard'
+import { AlertIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons'
 import {
   type ActivityRule,
   type ActivityDay,
   type ActivityPeriod,
   type DatePreference,
-  type MovieWish,
   resolveActivity,
   formatTimeRange,
   formatDeadline,
   isPeriodOpen,
-  rankLabel,
 } from '../lib/activity'
 
 const DAY_LABELS = ['月', '火', '水', '木', '金']
@@ -55,18 +53,14 @@ export default function ApplicationPage() {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [activityRules, setActivityRules] = useState<ActivityRule[]>([])
   const [activityDays, setActivityDays] = useState<ActivityDay[]>([])
   const [preferences, setPreferences] = useState<DatePreference[]>([])
-  const [myWish, setMyWish] = useState<MovieWish | null>(null)
-  const [wishTitle, setWishTitle] = useState('')
-  const [wishUrl, setWishUrl] = useState('')
-  const [wishNote, setWishNote] = useState('')
-  const [savingWish, setSavingWish] = useState(false)
-  const [wishMessage, setWishMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [busyDate, setBusyDate] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
 
   const weeks = getMonthWeeks(viewYear, viewMonth)
 
@@ -82,14 +76,6 @@ export default function ApplicationPage() {
     return m
   }, [activityDays])
 
-  const preferenceCountByDate = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const p of preferences) {
-      m.set(p.date, (m.get(p.date) ?? 0) + 1)
-    }
-    return m
-  }, [preferences])
-
   const myPreferences = useMemo(() => {
     if (!user) return []
     return preferences
@@ -100,6 +86,12 @@ export default function ApplicationPage() {
   const myRankByDate = useMemo(() => {
     const m = new Map<string, number>()
     for (const p of myPreferences) m.set(p.date, p.rank)
+    return m
+  }, [myPreferences])
+
+  const myMovieFilledByDate = useMemo(() => {
+    const m = new Map<string, boolean>()
+    for (const p of myPreferences) m.set(p.date, !!p.movie_title)
     return m
   }, [myPreferences])
 
@@ -115,7 +107,7 @@ export default function ApplicationPage() {
     }
     const periodId = periodIdData as string | null
 
-    const [periodRes, rulesRes, daysRes, preferencesRes, wishRes] = await Promise.all([
+    const [periodRes, rulesRes, daysRes, preferencesRes] = await Promise.all([
       periodId
         ? supabase.from('activity_periods').select('*').eq('id', periodId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -128,28 +120,16 @@ export default function ApplicationPage() {
       periodId
         ? supabase
             .from('date_preferences')
-            .select('*, profiles(display_name)')
-            .eq('period_id', periodId)
-        : Promise.resolve({ data: [], error: null }),
-      periodId
-        ? supabase
-            .from('period_movie_wishes')
             .select('*')
             .eq('period_id', periodId)
             .eq('user_id', user.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     setPeriod((periodRes.data as ActivityPeriod | null) ?? null)
     setActivityRules((rulesRes.data as ActivityRule[]) ?? [])
     setActivityDays((daysRes.data as ActivityDay[]) ?? [])
     setPreferences((preferencesRes.data as DatePreference[]) ?? [])
-    const wish = (wishRes.data as MovieWish | null) ?? null
-    setMyWish(wish)
-    setWishTitle(wish?.movie_title ?? '')
-    setWishUrl(wish?.movie_url ?? '')
-    setWishNote(wish?.movie_note ?? '')
 
     setLoading(false)
   }, [viewYear, viewMonth, user])
@@ -162,22 +142,26 @@ export default function ApplicationPage() {
     const d = new Date(viewYear, viewMonth - 1, 1)
     setViewYear(d.getFullYear())
     setViewMonth(d.getMonth())
-    setSelectedDate(null)
+    setExpandedDates(new Set())
   }
   const nextMonth = () => {
     const d = new Date(viewYear, viewMonth + 1, 1)
     setViewYear(d.getFullYear())
     setViewMonth(d.getMonth())
-    setSelectedDate(null)
+    setExpandedDates(new Set())
   }
   const thisMonth = () => {
     const now = new Date()
     setViewYear(now.getFullYear())
     setViewMonth(now.getMonth())
-    setSelectedDate(null)
+    setExpandedDates(new Set())
   }
 
-  const savePreferences = useCallback(
+  const flashError = (msg: string) => {
+    setPageError(msg)
+  }
+
+  const savePreferenceDates = useCallback(
     async (dates: string[]): Promise<string | null> => {
       if (!period) return '期間が読み込まれていません'
       const { error } = await supabase.rpc('set_my_preferences', {
@@ -191,44 +175,105 @@ export default function ApplicationPage() {
     [period, fetchData]
   )
 
-  const flashWish = (kind: 'ok' | 'err', text: string) => {
-    setWishMessage({ kind, text })
-    setTimeout(() => setWishMessage(null), 2500)
-  }
+  const togglePreferenceDate = useCallback(
+    async (date: string) => {
+      const ordered = myPreferences.map((p) => p.date)
+      const exists = ordered.includes(date)
+      const next = exists ? ordered.filter((d) => d !== date) : [...ordered, date]
+      setBusyDate(date)
+      const err = await savePreferenceDates(next)
+      setBusyDate(null)
+      if (err) {
+        flashError(err)
+        return
+      }
+      // 新規追加なら自動展開、削除なら展開状態をクリア
+      setExpandedDates((prev) => {
+        const newSet = new Set(prev)
+        if (exists) {
+          newSet.delete(date)
+        } else {
+          newSet.add(date)
+        }
+        return newSet
+      })
+    },
+    [myPreferences, savePreferenceDates]
+  )
 
-  const saveWish = async () => {
-    if (!period) return
-    setSavingWish(true)
-    const { error } = await supabase.rpc('set_my_movie_wish', {
-      p_period_id: period.id,
-      p_title: wishTitle,
-      p_url: wishUrl || null,
-      p_note: wishNote || null,
+  const moveRank = useCallback(
+    async (date: string, direction: -1 | 1) => {
+      const ordered = myPreferences.map((p) => p.date)
+      const idx = ordered.indexOf(date)
+      if (idx < 0) return
+      const newIdx = idx + direction
+      if (newIdx < 0 || newIdx >= ordered.length) return
+      ;[ordered[idx], ordered[newIdx]] = [ordered[newIdx], ordered[idx]]
+      setBusyDate(date)
+      const err = await savePreferenceDates(ordered)
+      setBusyDate(null)
+      if (err) flashError(err)
+    },
+    [myPreferences, savePreferenceDates]
+  )
+
+  const removePreference = useCallback(
+    async (date: string): Promise<string | null> => {
+      const ordered = myPreferences.map((p) => p.date).filter((d) => d !== date)
+      setBusyDate(date)
+      const err = await savePreferenceDates(ordered)
+      setBusyDate(null)
+      if (err) {
+        flashError(err)
+        return err
+      }
+      setExpandedDates((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(date)
+        return newSet
+      })
+      return null
+    },
+    [myPreferences, savePreferenceDates]
+  )
+
+  const saveDateWish = useCallback(
+    async (date: string, payload: DateWishPayload): Promise<string | null> => {
+      if (!period) return '期間が読み込まれていません'
+      const { error } = await supabase.rpc('set_my_date_wish', {
+        p_period_id: period.id,
+        p_date: date,
+        p_title: payload.title,
+        p_start_time: payload.title.trim() ? payload.startTime : null,
+        p_duration_minutes: payload.title.trim() ? payload.durationMinutes : null,
+        p_genre: payload.genre || null,
+        p_watch_url: payload.watchUrl || null,
+        p_description: payload.description || null,
+      })
+      if (error) return `映画情報の保存に失敗しました: ${error.message}`
+      await fetchData()
+      return null
+    },
+    [period, fetchData]
+  )
+
+  const toggleExpand = (date: string) => {
+    setExpandedDates((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(date)) {
+        newSet.delete(date)
+      } else {
+        newSet.add(date)
+      }
+      return newSet
     })
-    setSavingWish(false)
-    if (error) {
-      flashWish('err', `保存に失敗しました: ${error.message}`)
-      return
-    }
-    flashWish('ok', wishTitle.trim() ? '観たい映画を保存しました' : '観たい映画を削除しました')
-    fetchData()
   }
 
   const todayStr = formatDate(today)
   const periodLocked = !!period?.locked_at
   const periodOpen = isPeriodOpen(period)
   const canEdit = !!period && periodOpen
-  const wishDirty =
-    (wishTitle.trim() || '') !== (myWish?.movie_title ?? '') ||
-    (wishUrl.trim() || '') !== (myWish?.movie_url ?? '') ||
-    (wishNote.trim() || '') !== (myWish?.movie_note ?? '')
-
-  const selectedActivity = selectedDate
-    ? resolveActivity(selectedDate, rulesMap, daysMap)
-    : null
-  const selectedPrefsForDate = selectedDate
-    ? preferences.filter((p) => p.date === selectedDate)
-    : []
+  const missingMovieCount = myPreferences.filter((p) => !p.movie_title).length
 
   return (
     <div className="space-y-5">
@@ -285,80 +330,27 @@ export default function ApplicationPage() {
         </div>
       )}
 
+      {pageError && (
+        <div className="flex items-start gap-2 text-sm bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2 text-danger">
+          <span className="flex-1">{pageError}</span>
+          <button onClick={() => setPageError(null)} aria-label="閉じる" className="shrink-0">
+            ×
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-ink-muted">読み込み中...</p>
       ) : !period ? (
         <p className="text-sm text-danger">期間レコードを取得できませんでした</p>
       ) : (
         <>
-          {/* 観たい映画 */}
-          <section className="bg-card rounded-xl border border-line px-4 py-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <FilmIcon size={16} className="text-accent" />
-              <h3 className="text-sm font-bold text-ink">観たい映画</h3>
-            </div>
-            <p className="text-xs text-ink-muted -mt-1">
-              主催者になった日に上映する候補。確定後も編集できます（任意）。
-            </p>
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={wishTitle}
-                onChange={(e) => setWishTitle(e.target.value)}
-                disabled={!canEdit}
-                placeholder="タイトル（例: ショーシャンクの空に）"
-                className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent disabled:opacity-50"
-              />
-              <input
-                type="url"
-                value={wishUrl}
-                onChange={(e) => setWishUrl(e.target.value)}
-                disabled={!canEdit}
-                placeholder="視聴URL（任意）"
-                className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent disabled:opacity-50"
-              />
-              <textarea
-                value={wishNote}
-                onChange={(e) => setWishNote(e.target.value)}
-                disabled={!canEdit}
-                placeholder="メモ（任意・あらすじや一言など）"
-                rows={2}
-                className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent disabled:opacity-50 resize-none"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-ink-dim">
-                {myWish
-                  ? `登録済み: ${myWish.movie_title}`
-                  : '未登録（主催者になっても作品は手動で入力）'}
-              </p>
-              <button
-                onClick={saveWish}
-                disabled={!canEdit || savingWish || !wishDirty}
-                className="px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                {savingWish ? '保存中...' : '保存'}
-              </button>
-            </div>
-            {wishMessage && (
-              <p
-                className={`text-xs px-3 py-2 rounded-lg border ${
-                  wishMessage.kind === 'ok'
-                    ? 'bg-success-bg/60 border-success/30 text-success'
-                    : 'bg-danger-bg/60 border-danger/30 text-danger'
-                }`}
-              >
-                {wishMessage.text}
-              </p>
-            )}
-          </section>
-
-          {/* 希望日選択 */}
+          {/* 希望日選択カレンダー */}
           <section className="space-y-2">
             <div className="flex items-baseline justify-between">
               <h3 className="text-sm font-bold text-ink">希望日を選ぶ</h3>
               <p className="text-[11px] text-ink-muted">
-                活動可能日をタップして追加
+                {canEdit ? 'タップで追加・解除' : '受付期間外'}
               </p>
             </div>
 
@@ -385,7 +377,9 @@ export default function ApplicationPage() {
                       : ''
                     const roomLabel = isActivity ? activity.room : null
                     const myRank = myRankByDate.get(dateStr) ?? null
-                    const prefCount = preferenceCountByDate.get(dateStr) ?? 0
+                    const movieFilled = myMovieFilledByDate.get(dateStr) ?? false
+                    const cellBusy = busyDate === dateStr
+                    const tappable = isActivity && canEdit
 
                     let cellClass = 'border-line bg-card opacity-40 cursor-not-allowed'
                     let dateClass = 'text-ink-dim'
@@ -399,15 +393,18 @@ export default function ApplicationPage() {
                           : 'border-line bg-card hover:border-accent/50 hover:bg-card-hover'
                       dateClass = selected ? 'text-bg' : 'text-ink'
                       subClass = selected ? 'text-bg/80' : 'text-ink-muted'
+                      if (!canEdit) {
+                        cellClass += ' opacity-70 cursor-not-allowed'
+                      }
                     }
 
                     return (
                       <button
                         key={di}
-                        onClick={() => isActivity && setSelectedDate(dateStr)}
-                        disabled={!isActivity}
+                        onClick={() => tappable && togglePreferenceDate(dateStr)}
+                        disabled={!tappable || cellBusy}
                         className={`relative aspect-square rounded-lg border p-1.5 flex flex-col items-center justify-between text-center transition-all ${
-                          isActivity ? 'active:scale-95' : ''
+                          tappable ? 'active:scale-95' : ''
                         } ${cellClass}`}
                       >
                         <span className={`text-base font-bold leading-none ${dateClass}`}>
@@ -420,11 +417,7 @@ export default function ApplicationPage() {
                                 {roomLabel}
                               </span>
                             )}
-                            {prefCount > 0 ? (
-                              <span className={`text-[11px] font-semibold leading-none ${subClass}`}>
-                                {prefCount}希望
-                              </span>
-                            ) : timeLabel ? (
+                            {timeLabel ? (
                               <span className={`text-[10px] font-medium leading-none ${subClass}`}>
                                 {timeLabel}
                               </span>
@@ -436,9 +429,19 @@ export default function ApplicationPage() {
                           <span className={`text-[11px] leading-none ${subClass}`}>休</span>
                         )}
                         {myRank !== null && (
-                          <span className="absolute top-1 right-1 text-[10px] font-bold px-1 rounded bg-bg text-accent leading-tight">
-                            {rankLabel(myRank)}
-                          </span>
+                          <>
+                            <span className="absolute top-1 left-1 text-[10px] font-bold px-1 rounded bg-bg text-accent leading-tight">
+                              {myRank}位
+                            </span>
+                            <span
+                              className={`absolute top-1 right-1 inline-flex items-center justify-center w-4 h-4 rounded-full ${
+                                movieFilled ? 'bg-success/90 text-bg' : 'bg-danger/90 text-bg'
+                              }`}
+                              aria-label={movieFilled ? '映画入力済み' : '映画未入力'}
+                            >
+                              {movieFilled ? <CheckIcon size={10} /> : <AlertIcon size={10} />}
+                            </span>
+                          </>
                         )}
                       </button>
                     )
@@ -447,69 +450,66 @@ export default function ApplicationPage() {
               ))}
             </div>
 
-            <div className="flex items-center justify-center gap-4 text-xs text-ink-muted pt-1">
-              <span className="inline-flex items-center gap-1.5">
+            <div className="flex items-center justify-center gap-3 text-[11px] text-ink-muted pt-1">
+              <span className="inline-flex items-center gap-1">
                 <span className="w-3 h-3 rounded bg-accent border border-accent-strong" />
-                希望に追加済み
+                追加済み
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-card border border-line" />
-                未追加
+              <span className="inline-flex items-center gap-1">
+                <CheckIcon size={11} className="text-success" />
+                映画入力済
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <AlertIcon size={11} className="text-danger" />
+                映画未入力
               </span>
             </div>
           </section>
 
-          {/* 自分の希望順位サマリ */}
-          {myPreferences.length > 0 && (
-            <section className="bg-card rounded-xl border border-line px-4 py-3 space-y-2">
-              <p className="text-sm font-bold text-ink">あなたの希望順位</p>
-              <ul className="space-y-1">
-                {myPreferences.map((pref) => {
-                  const dt = new Date(pref.date + 'T00:00:00')
-                  const label = `${dt.getMonth() + 1}/${dt.getDate()}`
-                  return (
-                    <li
-                      key={pref.id}
-                      className="flex items-center justify-between gap-2 text-sm"
-                    >
-                      <span className="text-accent font-bold w-14">
-                        {rankLabel(pref.rank)}
-                      </span>
-                      <span className="flex-1 text-ink">{label}</span>
-                      <button
-                        onClick={() => setSelectedDate(pref.date)}
-                        className="text-xs text-ink-muted hover:text-accent"
-                      >
-                        編集
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
+          {/* 希望日カードリスト */}
+          {myPreferences.length > 0 ? (
+            <section className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-bold text-ink">
+                  あなたの希望（{myPreferences.length}件）
+                </h3>
+                {missingMovieCount > 0 && (
+                  <p className="text-[11px] text-danger inline-flex items-center gap-1">
+                    <AlertIcon size={11} />
+                    映画未入力 {missingMovieCount}件
+                  </p>
+                )}
+              </div>
+              <p className="text-[11px] text-ink-muted -mt-1">
+                順位はカード右側の ↑↓ で入れ替え。タップで詳細を展開して映画情報を入力してください。
+              </p>
+
+              <div className="space-y-2">
+                {myPreferences.map((pref, idx) => (
+                  <PreferenceDateCard
+                    key={pref.id}
+                    pref={pref}
+                    isFirst={idx === 0}
+                    isLast={idx === myPreferences.length - 1}
+                    expanded={expandedDates.has(pref.date)}
+                    disabled={!canEdit || busyDate === pref.date}
+                    onToggleExpand={() => toggleExpand(pref.date)}
+                    onMoveUp={() => moveRank(pref.date, -1)}
+                    onMoveDown={() => moveRank(pref.date, 1)}
+                    onRemove={() => removePreference(pref.date)}
+                    onSaveWish={(payload) => saveDateWish(pref.date, payload)}
+                  />
+                ))}
+              </div>
             </section>
+          ) : (
+            canEdit && (
+              <p className="text-sm text-ink-muted text-center py-4">
+                上のカレンダーから活動可能日をタップして希望に追加してください
+              </p>
+            )
           )}
         </>
-      )}
-
-      {selectedDate && user && selectedActivity?.active && (
-        <DayPreferenceModal
-          mode="apply"
-          dateStr={selectedDate}
-          currentUserId={user.id}
-          period={period}
-          activityStart={selectedActivity.start_time}
-          activityEnd={selectedActivity.end_time}
-          activityRoom={selectedActivity.room}
-          myPreferences={myPreferences}
-          preferencesForDate={selectedPrefsForDate}
-          assignment={null}
-          hostName={null}
-          attendances={[]}
-          onSavePreferences={savePreferences}
-          onAttendanceChange={async () => null}
-          onAssignmentSaved={fetchData}
-          onClose={() => setSelectedDate(null)}
-        />
       )}
     </div>
   )

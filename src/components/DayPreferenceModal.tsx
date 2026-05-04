@@ -6,42 +6,28 @@ import {
   PinIcon,
   FilmIcon,
   UsersIcon,
-  ChevronUpIcon,
-  ChevronDownIcon,
-  PlusIcon,
-  TrashIcon,
   LinkIcon,
 } from './icons'
 import {
   formatTimeRange,
-  rankLabel,
   type ActivityAssignment,
   type ActivityPeriod,
   type Attendance,
   type AttendanceStatus,
-  type DatePreference,
 } from '../lib/activity'
 import HostMovieEditor from './HostMovieEditor'
 
 type Props = {
-  // 'view' = 活動日確認ページ用 (Assignment + Attendance のみ)
-  // 'apply' = 活動申請ページ用 (Preference 編集のみ)
-  mode: 'view' | 'apply'
   dateStr: string
   currentUserId: string | null
-  period: ActivityPeriod | null
   activityStart: string | null
   activityEnd: string | null
   activityRoom: string | null
-  // 自分の希望リスト（rank昇順）
-  myPreferences: DatePreference[]
-  // この日付を希望している全ユーザー（rank問わず）
-  preferencesForDate: DatePreference[]
   // 確定済みの場合の割り当て
   assignment: ActivityAssignment | null
   hostName: string | null
   attendances: Attendance[]
-  onSavePreferences: (dates: string[]) => Promise<string | null>
+  periodLocked: boolean
   onAttendanceChange: (status: AttendanceStatus | null) => Promise<string | null>
   onAssignmentSaved: () => void
   onClose: () => void
@@ -50,25 +36,20 @@ type Props = {
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 export default function DayPreferenceModal({
-  mode,
   dateStr,
   currentUserId,
-  period,
   activityStart,
   activityEnd,
   activityRoom,
-  myPreferences,
-  preferencesForDate,
   assignment,
   hostName,
   attendances,
-  onSavePreferences,
+  periodLocked,
   onAttendanceChange,
   onAssignmentSaved,
   onClose,
 }: Props) {
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [attendanceBusy, setAttendanceBusy] = useState<AttendanceStatus | 'clear' | null>(null)
 
   useEffect(() => {
@@ -87,40 +68,6 @@ export default function DayPreferenceModal({
   const d = new Date(dateStr + 'T00:00:00')
   const heading = `${d.getMonth() + 1}月${d.getDate()}日（${DAY_LABELS[d.getDay()]}）`
   const timeLabel = formatTimeRange(activityStart, activityEnd)
-
-  const myRankForDate = myPreferences.find((p) => p.date === dateStr)?.rank ?? null
-  const periodLocked = !!period?.locked_at
-  const periodOpen =
-    !!period && !period.locked_at && new Date(period.deadline_at).getTime() > Date.now()
-
-  const otherPrefsForDate = preferencesForDate.filter((p) => p.user_id !== currentUserId)
-
-  const handleSave = async (newDates: string[]) => {
-    setError(null)
-    setBusy(true)
-    const err = await onSavePreferences(newDates)
-    setBusy(false)
-    if (err) setError(err)
-  }
-
-  const addThisDate = () => {
-    const ordered = myPreferences.map((p) => p.date)
-    if (!ordered.includes(dateStr)) ordered.push(dateStr)
-    handleSave(ordered)
-  }
-  const removeThisDate = () => {
-    const ordered = myPreferences.map((p) => p.date).filter((dt) => dt !== dateStr)
-    handleSave(ordered)
-  }
-  const moveRank = (date: string, direction: -1 | 1) => {
-    const ordered = myPreferences.map((p) => p.date)
-    const idx = ordered.indexOf(date)
-    if (idx < 0) return
-    const newIdx = idx + direction
-    if (newIdx < 0 || newIdx >= ordered.length) return
-    ;[ordered[idx], ordered[newIdx]] = [ordered[newIdx], ordered[idx]]
-    handleSave(ordered)
-  }
 
   const myAttendance = attendances.find((a) => a.user_id === currentUserId)
   const goingAttendees = attendances.filter((a) => a.status === 'going')
@@ -175,16 +122,24 @@ export default function DayPreferenceModal({
             </p>
           )}
 
-          {mode === 'view' && periodLocked && (
-            <AssignmentSection
-              assignment={assignment}
-              hostName={hostName}
-              isHost={!!currentUserId && assignment?.host_user_id === currentUserId}
-              onAssignmentSaved={onAssignmentSaved}
-            />
-          )}
-
-          {mode === 'view' && (periodLocked || (assignment && assignment.host_user_id)) && (
+          {periodLocked ? (
+            <>
+              <AssignmentSection
+                assignment={assignment}
+                hostName={hostName}
+                isHost={!!currentUserId && assignment?.host_user_id === currentUserId}
+                onAssignmentSaved={onAssignmentSaved}
+              />
+              <AttendanceSection
+                isAuthenticated={!!currentUserId}
+                myStatus={myAttendance?.status ?? null}
+                going={goingAttendees}
+                notGoing={notGoingAttendees}
+                busy={attendanceBusy}
+                onChange={handleAttendance}
+              />
+            </>
+          ) : assignment && assignment.host_user_id ? (
             <AttendanceSection
               isAuthenticated={!!currentUserId}
               myStatus={myAttendance?.status ?? null}
@@ -193,38 +148,11 @@ export default function DayPreferenceModal({
               busy={attendanceBusy}
               onChange={handleAttendance}
             />
-          )}
-
-          {mode === 'view' && !periodLocked && (
+          ) : (
             <div className="py-8 text-center space-y-2">
               <p className="text-sm text-ink-muted">
                 希望提出受付中です。<br />
                 「申請」タブから希望日を提出してください。
-              </p>
-            </div>
-          )}
-
-          {mode === 'apply' && !periodLocked && (
-            <PreferenceSection
-              periodOpen={periodOpen}
-              myRankForDate={myRankForDate}
-              myPreferences={myPreferences}
-              othersForDateCount={otherPrefsForDate.length}
-              othersForDateNames={otherPrefsForDate
-                .map((p) => p.profiles?.display_name ?? '?')
-                .filter((n, i, a) => a.indexOf(n) === i)}
-              busy={busy}
-              onAdd={addThisDate}
-              onRemove={removeThisDate}
-              onMove={moveRank}
-            />
-          )}
-
-          {mode === 'apply' && periodLocked && (
-            <div className="py-8 text-center space-y-2">
-              <p className="text-sm text-ink-muted">
-                この月の申請は集計済みです。<br />
-                確定した活動日は「カレンダー」タブで確認できます。
               </p>
             </div>
           )}
@@ -295,6 +223,12 @@ function AssignmentSection({
                 {assignment.movie_title}
               </h4>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-muted">
+                {assignment.movie_start_time && (
+                  <span className="inline-flex items-center gap-0.5 text-accent font-medium">
+                    <ClockIcon size={11} />
+                    開始 {assignment.movie_start_time.slice(0, 5)}
+                  </span>
+                )}
                 {assignment.movie_genre && (
                   <span className="inline-flex items-center gap-0.5">
                     {assignment.movie_genre}
@@ -335,130 +269,6 @@ function AssignmentSection({
       )}
 
       {isHost && <HostMovieEditor assignment={assignment} onSaved={onAssignmentSaved} />}
-    </div>
-  )
-}
-
-function PreferenceSection({
-  periodOpen,
-  myRankForDate,
-  myPreferences,
-  othersForDateCount,
-  othersForDateNames,
-  busy,
-  onAdd,
-  onRemove,
-  onMove,
-}: {
-  periodOpen: boolean
-  myRankForDate: number | null
-  myPreferences: DatePreference[]
-  othersForDateCount: number
-  othersForDateNames: string[]
-  busy: boolean
-  onAdd: () => void
-  onRemove: () => void
-  onMove: (date: string, direction: -1 | 1) => void
-}) {
-  if (!periodOpen) {
-    return (
-      <div className="py-8 text-center space-y-2">
-        <p className="text-sm text-ink-muted">
-          希望提出は締め切られました。<br />
-          まもなく主催者が確定します。
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-line bg-card px-4 py-3 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-ink">この日の希望</p>
-            <p className="text-[11px] text-ink-muted mt-0.5">
-              {myRankForDate !== null
-                ? `あなたの${rankLabel(myRankForDate)}`
-                : 'まだ希望日に追加されていません'}
-            </p>
-          </div>
-          {myRankForDate !== null ? (
-            <button
-              onClick={onRemove}
-              disabled={busy}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 disabled:opacity-60 transition-colors"
-            >
-              <TrashIcon size={13} />
-              希望から外す
-            </button>
-          ) : (
-            <button
-              onClick={onAdd}
-              disabled={busy}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent text-bg hover:bg-accent-strong disabled:opacity-60 transition-colors"
-            >
-              <PlusIcon size={13} />
-              希望日に追加
-            </button>
-          )}
-        </div>
-
-        <div className="text-[11px] text-ink-muted">
-          <span className="inline-flex items-center gap-1">
-            <UsersIcon size={11} />
-            {othersForDateCount > 0
-              ? `他${othersForDateCount}人が希望: ${othersForDateNames.join('、')}`
-              : 'まだ他に希望者はいません'}
-          </span>
-        </div>
-      </div>
-
-      {myPreferences.length > 0 && (
-        <div className="rounded-xl border border-line bg-card px-4 py-3 space-y-2">
-          <p className="text-sm font-semibold text-ink mb-1">あなたの希望順位</p>
-          <p className="text-[11px] text-ink-muted -mt-1 mb-2">
-            上位ほど優先されます。↑↓で順位を入れ替え
-          </p>
-          <ul className="space-y-1.5">
-            {myPreferences.map((pref, idx) => {
-              const dt = new Date(pref.date + 'T00:00:00')
-              const label = `${dt.getMonth() + 1}月${dt.getDate()}日（${DAY_LABELS[dt.getDay()]}）`
-              return (
-                <li
-                  key={pref.id}
-                  className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-bg border border-line"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="shrink-0 text-[11px] font-bold text-accent w-12">
-                      {rankLabel(pref.rank)}
-                    </span>
-                    <span className="text-sm text-ink truncate">{label}</span>
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      onClick={() => onMove(pref.date, -1)}
-                      disabled={busy || idx === 0}
-                      aria-label="順位を上げる"
-                      className="p-1.5 rounded text-ink-muted hover:text-accent disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <ChevronUpIcon size={14} />
-                    </button>
-                    <button
-                      onClick={() => onMove(pref.date, 1)}
-                      disabled={busy || idx === myPreferences.length - 1}
-                      aria-label="順位を下げる"
-                      className="p-1.5 rounded text-ink-muted hover:text-accent disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <ChevronDownIcon size={14} />
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
     </div>
   )
 }
