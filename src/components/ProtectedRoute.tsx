@@ -6,8 +6,8 @@ export default function ProtectedRoute({ children, adminOnly = false }: { childr
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500">読み込み中...</div>
+      <div className="flex items-center justify-center min-h-screen bg-bg">
+        <div className="text-ink-muted text-sm">読み込み中...</div>
       </div>
     )
   }

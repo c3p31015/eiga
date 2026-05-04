@@ -1,5 +1,8 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase, supabaseAdmin } from '../lib/supabase'
+import { PlusIcon } from '../components/icons'
+import ActivityScheduleEditor from '../components/ActivityScheduleEditor'
+import PeriodAdminPanel from '../components/PeriodAdminPanel'
 
 type Profile = {
   id: string
@@ -39,7 +42,6 @@ export default function AdminPage() {
 
     const email = `${username.trim()}@circle.local`
 
-    // 別のSupabaseインスタンスでサインアップ（現在のセッションに影響しない）
     const { data, error: signUpError } = await supabaseAdmin.auth.signUp({
       email,
       password,
@@ -52,7 +54,6 @@ export default function AdminPage() {
     }
 
     if (data.user) {
-      // プロフィールを作成
       const { error: profileError } = await supabase.from('profiles').insert({
         id: data.user.id,
         username: username.trim(),
@@ -77,15 +78,19 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">メンバー管理</h2>
+    <div className="space-y-8">
+      <section className="space-y-5">
+      <h2 className="text-xl font-bold text-ink">メンバー管理</h2>
 
-      <form onSubmit={handleCreate} className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="font-medium text-gray-700">新しいメンバーを追加</h3>
+      <form
+        onSubmit={handleCreate}
+        className="bg-card rounded-xl border border-line p-5 space-y-3"
+      >
+        <h3 className="font-semibold text-ink">新しいメンバーを追加</h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label htmlFor="new-username" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="new-username" className="block text-xs font-medium text-ink-muted mb-1.5">
               ユーザーID
             </label>
             <input
@@ -96,12 +101,12 @@ export default function AdminPage() {
               required
               pattern="[a-zA-Z0-9_]+"
               title="英数字とアンダースコアのみ"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               placeholder="例: tanaka"
             />
           </div>
           <div>
-            <label htmlFor="new-display" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="new-display" className="block text-xs font-medium text-ink-muted mb-1.5">
               表示名
             </label>
             <input
@@ -110,12 +115,12 @@ export default function AdminPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               placeholder="例: 田中太郎"
             />
           </div>
           <div>
-            <label htmlFor="new-password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="new-password" className="block text-xs font-medium text-ink-muted mb-1.5">
               パスワード
             </label>
             <input
@@ -125,65 +130,69 @@ export default function AdminPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               placeholder="6文字以上"
             />
           </div>
           <div className="flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer pb-2">
+            <label className="flex items-center gap-2 cursor-pointer pb-2.5">
               <input
                 type="checkbox"
                 checked={isAdmin}
                 onChange={(e) => setIsAdmin(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="w-4 h-4 rounded border-line bg-bg text-accent focus:ring-accent/50"
               />
-              <span className="text-sm text-gray-700">管理者権限を付与</span>
+              <span className="text-sm text-ink">管理者権限を付与</span>
             </label>
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-        {success && <p className="text-sm text-green-600 bg-green-50 rounded-lg px-3 py-2">{success}</p>}
+        {error && (
+          <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="text-sm text-success bg-success-bg/60 border border-success/30 rounded-lg px-3 py-2">
+            {success}
+          </p>
+        )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-50 transition-colors"
         >
+          <PlusIcon />
           {submitting ? '作成中...' : 'アカウントを作成'}
         </button>
       </form>
 
-      <h3 className="text-lg font-bold text-gray-800">メンバー一覧</h3>
+      <h3 className="text-lg font-bold text-ink pt-1">メンバー一覧</h3>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-5 py-3 font-medium text-gray-600">ユーザーID</th>
-              <th className="text-left px-5 py-3 font-medium text-gray-600">表示名</th>
-              <th className="text-left px-5 py-3 font-medium text-gray-600">権限</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {members.map((m) => (
-              <tr key={m.id}>
-                <td className="px-5 py-3 text-gray-700">{m.username}</td>
-                <td className="px-5 py-3 text-gray-700">{m.display_name}</td>
-                <td className="px-5 py-3">
-                  {m.is_admin ? (
-                    <span className="inline-block px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-                      管理者
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">メンバー</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-2">
+        {members.map((m) => (
+          <div
+            key={m.id}
+            className="bg-card rounded-xl border border-line px-4 py-3 flex items-center justify-between"
+          >
+            <div className="min-w-0">
+              <p className="font-medium text-ink">{m.display_name}</p>
+              <p className="text-xs text-ink-muted truncate">@{m.username}</p>
+            </div>
+            {m.is_admin && (
+              <span className="shrink-0 ml-3 inline-block px-2 py-0.5 text-[11px] font-semibold bg-accent/15 text-accent rounded-full border border-accent/30">
+                管理者
+              </span>
+            )}
+          </div>
+        ))}
       </div>
+      </section>
+
+      <ActivityScheduleEditor />
+
+      <PeriodAdminPanel />
     </div>
   )
 }

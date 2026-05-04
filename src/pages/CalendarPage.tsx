@@ -1,22 +1,22 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-
-type Movie = {
-  id: string
-  title: string
-  description: string | null
-}
-
-type Vote = {
-  id: string
-  user_id: string
-  movie_id: string
-  date: string
-  profiles: { display_name: string } | null
-}
-
-type DayVotes = Record<string, Vote[]> // movie_id -> votes
+import DayPreferenceModal from '../components/DayPreferenceModal'
+import { ChevronLeftIcon, ChevronRightIcon, FilmIcon, UsersIcon } from '../components/icons'
+import {
+  type ActivityRule,
+  type ActivityDay,
+  type ActivityPeriod,
+  type ActivityAssignment,
+  type Attendance,
+  type AttendanceStatus,
+  resolveActivity,
+  formatTimeRange,
+  formatDeadline,
+  isPeriodOpen,
+  isPeriodPendingLock,
+} from '../lib/activity'
 
 const DAY_LABELS = ['月', '火', '水', '木', '金']
 
@@ -27,12 +27,11 @@ function formatDate(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-// 月の月〜金だけを週ごとにまとめた2次元配列を返す
 function getMonthWeeks(year: number, month: number): (Date | null)[][] {
   const firstOfMonth = new Date(year, month, 1)
   const lastOfMonth = new Date(year, month + 1, 0)
 
-  const firstDayOfWeek = firstOfMonth.getDay() // 0=日, 1=月, ...
+  const firstDayOfWeek = firstOfMonth.getDay()
   const daysToSubtract = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
   const startMonday = new Date(year, month, 1 - daysToSubtract)
 
@@ -59,41 +58,134 @@ export default function CalendarPage() {
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [movies, setMovies] = useState<Movie[]>([])
-  const [monthVotes, setMonthVotes] = useState<Record<string, DayVotes>>({}) // date -> DayVotes
+  const [period, setPeriod] = useState<ActivityPeriod | null>(null)
+  const [activityRules, setActivityRules] = useState<ActivityRule[]>([])
+  const [activityDays, setActivityDays] = useState<ActivityDay[]>([])
+  const [assignments, setAssignments] = useState<ActivityAssignment[]>([])
+  const [profilesById, setProfilesById] = useState<Map<string, string>>(new Map())
+  const [attendances, setAttendances] = useState<Attendance[]>([])
   const [loading, setLoading] = useState(true)
 
   const weeks = getMonthWeeks(viewYear, viewMonth)
+
+  const rulesMap = useMemo(() => {
+    const m = new Map<number, ActivityRule>()
+    for (const r of activityRules) m.set(r.weekday, r)
+    return m
+  }, [activityRules])
+
+  const daysMap = useMemo(() => {
+    const m = new Map<string, ActivityDay>()
+    for (const d of activityDays) m.set(d.date, d)
+    return m
+  }, [activityDays])
+
+  const assignmentsByDate = useMemo(() => {
+    const m = new Map<string, ActivityAssignment>()
+    for (const a of assignments) m.set(a.date, a)
+    return m
+  }, [assignments])
+
+  const attendancesByDate = useMemo(() => {
+    const m = new Map<string, Attendance[]>()
+    for (const a of attendances) {
+      const list = m.get(a.date)
+      if (list) list.push(a)
+      else m.set(a.date, [a])
+    }
+    return m
+  }, [attendances])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     const firstDay = formatDate(new Date(viewYear, viewMonth, 1))
     const lastDay = formatDate(new Date(viewYear, viewMonth + 1, 0))
 
-    const [moviesRes, votesRes] = await Promise.all([
-      supabase.from('movies').select('id, title, description').order('title'),
-      supabase
-        .from('votes')
-        .select('*, profiles(display_name)')
-        .gte('date', firstDay)
-        .lte('date', lastDay),
-    ])
-
-    setMovies(moviesRes.data ?? [])
-
-    const grouped: Record<string, DayVotes> = {}
-    for (const vote of (votesRes.data as Vote[]) ?? []) {
-      if (!grouped[vote.date]) grouped[vote.date] = {}
-      if (!grouped[vote.date][vote.movie_id]) grouped[vote.date][vote.movie_id] = []
-      grouped[vote.date][vote.movie_id].push(vote)
+    let periodId: string | null = null
+    if (user) {
+      const { data: periodIdData, error: ensureError } = await supabase.rpc('ensure_period', {
+        p_year: viewYear,
+        p_month: viewMonth + 1,
+      })
+      if (ensureError) {
+        console.error('ensure_period failed:', ensureError)
+      }
+      periodId = (periodIdData as string | null) ?? null
+    } else {
+      const { data: periodRow } = await supabase
+        .from('activity_periods')
+        .select('id')
+        .eq('year', viewYear)
+        .eq('month', viewMonth + 1)
+        .maybeSingle()
+      periodId = (periodRow as { id: string } | null)?.id ?? null
     }
-    setMonthVotes(grouped)
+
+    const [periodRes, rulesRes, daysRes, assignmentsRes, attendancesRes, profilesRes] =
+      await Promise.all([
+        periodId
+          ? supabase.from('activity_periods').select('*').eq('id', periodId).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        supabase.from('activity_rules').select('*'),
+        supabase
+          .from('activity_days')
+          .select('*')
+          .gte('date', firstDay)
+          .lte('date', lastDay),
+        supabase
+          .from('activity_assignments')
+          .select('*, profiles:host_user_id(display_name)')
+          .gte('date', firstDay)
+          .lte('date', lastDay),
+        supabase
+          .from('activity_attendances')
+          .select('user_id, date, status, profiles(display_name)')
+          .gte('date', firstDay)
+          .lte('date', lastDay),
+        supabase.from('profiles').select('id, display_name'),
+      ])
+
+    setPeriod((periodRes.data as ActivityPeriod | null) ?? null)
+    setActivityRules((rulesRes.data as ActivityRule[]) ?? [])
+    setActivityDays((daysRes.data as ActivityDay[]) ?? [])
+    setAssignments((assignmentsRes.data as unknown as ActivityAssignment[]) ?? [])
+    setAttendances((attendancesRes.data as unknown as Attendance[]) ?? [])
+    const map = new Map<string, string>()
+    for (const p of (profilesRes.data as { id: string; display_name: string }[]) ?? []) {
+      map.set(p.id, p.display_name)
+    }
+    setProfilesById(map)
+
     setLoading(false)
-  }, [viewYear, viewMonth])
+  }, [viewYear, viewMonth, user])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 締切過ぎ＆未集計の期間があれば自動でロック（ログイン時のみ）
+  useEffect(() => {
+    if (loading) return
+    if (!user) return
+    if (!period) return
+    if (!isPeriodPendingLock(period)) return
+
+    let cancelled = false
+    ;(async () => {
+      const { error: rpcError } = await supabase.rpc('lock_activity_period', {
+        p_period_id: period.id,
+      })
+      if (cancelled) return
+      if (rpcError) {
+        console.error('lock_activity_period failed:', rpcError)
+        return
+      }
+      await fetchData()
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loading, user, period, fetchData])
 
   const prevMonth = () => {
     const d = new Date(viewYear, viewMonth - 1, 1)
@@ -116,128 +208,224 @@ export default function CalendarPage() {
     setSelectedDate(null)
   }
 
-  const toggleVote = async (movieId: string) => {
-    if (!selectedDate || !user) return
-    const dayVotes = monthVotes[selectedDate]?.[movieId] ?? []
-    const myVote = dayVotes.find((v) => v.user_id === user.id)
-
-    if (myVote) {
-      await supabase.from('votes').delete().eq('id', myVote.id)
-    } else {
-      await supabase.from('votes').insert({
-        user_id: user.id,
-        movie_id: movieId,
-        date: selectedDate,
-      })
-    }
-    fetchData()
-  }
-
-  const getTopMovie = (dateStr: string): { title: string; count: number } | null => {
-    const dayVotes = monthVotes[dateStr]
-    if (!dayVotes) return null
-    let maxCount = 0
-    let topMovieId = ''
-    for (const [movieId, votes] of Object.entries(dayVotes)) {
-      if (votes.length > maxCount) {
-        maxCount = votes.length
-        topMovieId = movieId
+  const setAttendance = useCallback(
+    async (status: AttendanceStatus | null): Promise<string | null> => {
+      if (!selectedDate || !user) return null
+      if (status === null) {
+        const { error } = await supabase
+          .from('activity_attendances')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('date', selectedDate)
+        if (error) return `参加表明の取り消しに失敗しました: ${error.message}`
+      } else {
+        const { error } = await supabase.from('activity_attendances').upsert(
+          {
+            user_id: user.id,
+            date: selectedDate,
+            status,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,date' }
+        )
+        if (error) return `参加表明の更新に失敗しました: ${error.message}`
       }
-    }
-    if (maxCount === 0) return null
-    const movie = movies.find((m) => m.id === topMovieId)
-    return movie ? { title: movie.title, count: maxCount } : null
-  }
+      await fetchData()
+      return null
+    },
+    [selectedDate, user, fetchData]
+  )
 
-  const selectedDayVotes = selectedDate ? monthVotes[selectedDate] ?? {} : {}
   const todayStr = formatDate(today)
+  const selectedActivity = selectedDate
+    ? resolveActivity(selectedDate, rulesMap, daysMap)
+    : null
+  const selectedAssignment = selectedDate ? assignmentsByDate.get(selectedDate) ?? null : null
+  const selectedHostName = selectedAssignment?.host_user_id
+    ? profilesById.get(selectedAssignment.host_user_id) ?? null
+    : null
+
+  const periodLocked = !!period?.locked_at
+  const periodOpen = isPeriodOpen(period)
 
   return (
-    <div className="space-y-6">
-      {/* Month navigation */}
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-800">
-          {viewYear}年{viewMonth + 1}月
-        </h2>
-        <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">
+            活動日確認
+          </p>
+          <h2 className="text-xl font-bold text-ink">
+            {viewYear}年{viewMonth + 1}月
+          </h2>
+        </div>
+        <div className="flex items-center gap-1">
           <button
             onClick={prevMonth}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="前月"
+            className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >
-            &larr; 前月
+            <ChevronLeftIcon />
           </button>
           <button
             onClick={thisMonth}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
           >
             今月
           </button>
           <button
             onClick={nextMonth}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="翌月"
+            className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >
-            翌月 &rarr;
+            <ChevronRightIcon />
           </button>
         </div>
       </div>
 
-      {/* Calendar grid */}
+      {period && (
+        <>
+          <div
+            className={`text-xs rounded-lg px-3 py-2 border ${
+              periodLocked
+                ? 'bg-card border-line text-ink-muted'
+                : periodOpen
+                  ? 'bg-success-bg/40 border-success/30 text-success'
+                  : 'bg-danger-bg/40 border-danger/30 text-danger'
+            }`}
+          >
+            {periodLocked ? (
+              <>主催者確定済み（締切: {formatDeadline(period.deadline_at)}）</>
+            ) : periodOpen ? (
+              <>申請受付中 — 締切: {formatDeadline(period.deadline_at)}</>
+            ) : (
+              <>締切過ぎ — まもなく主催者を確定します</>
+            )}
+          </div>
+          {periodOpen && (
+            <Link
+              to={user ? '/apply' : '/login'}
+              className="block text-center bg-accent text-bg text-sm font-semibold rounded-lg py-2.5 hover:bg-accent-strong transition-colors"
+            >
+              {user ? 'この月の活動申請をする →' : 'ログインして活動申請をする →'}
+            </Link>
+          )}
+        </>
+      )}
+
       {loading ? (
-        <p className="text-gray-500 text-sm">読み込み中...</p>
+        <p className="text-ink-muted text-sm">読み込み中...</p>
       ) : (
-        <div className="space-y-2">
-          {/* Weekday header */}
-          <div className="grid grid-cols-5 gap-2">
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-5 gap-1.5">
             {DAY_LABELS.map((label) => (
-              <div key={label} className="text-center text-sm font-medium text-gray-500 py-1">
+              <div key={label} className="text-center text-sm font-medium text-ink-muted py-1">
                 {label}
               </div>
             ))}
           </div>
-          {/* Weeks */}
           {weeks.map((week, wi) => (
-            <div key={wi} className="grid grid-cols-5 gap-2">
+            <div key={wi} className="grid grid-cols-5 gap-1.5">
               {week.map((date, di) => {
                 if (!date) {
-                  return <div key={di} className="rounded-xl border-2 border-transparent p-3" />
+                  return <div key={di} className="rounded-lg" />
                 }
                 const dateStr = formatDate(date)
-                const isSelected = selectedDate === dateStr
                 const isToday = todayStr === dateStr
-                const topMovie = getTopMovie(dateStr)
-                const totalVotes = Object.values(monthVotes[dateStr] ?? {}).reduce(
-                  (sum, votes) => sum + votes.length,
-                  0
-                )
+                const activity = resolveActivity(dateStr, rulesMap, daysMap)
+                const isActivity = activity.active
+                const timeLabel = isActivity
+                  ? formatTimeRange(activity.start_time, activity.end_time)
+                  : ''
+                const roomLabel = isActivity ? activity.room : null
+                const assignment = assignmentsByDate.get(dateStr)
+                const dayAttendances = attendancesByDate.get(dateStr) ?? []
+                const goingCount = dayAttendances.filter((a) => a.status === 'going').length
+                const hostName = assignment?.host_user_id
+                  ? profilesById.get(assignment.host_user_id) ?? null
+                  : null
+
+                const isConfirmedActivity = periodLocked && !!assignment?.host_user_id
+
+                let cellClass = 'border-line bg-card opacity-40 cursor-not-allowed'
+                let dateClass = 'text-ink-dim'
+                let subClass = 'text-ink-dim'
+                if (isConfirmedActivity) {
+                  cellClass = isToday
+                    ? 'border-accent-strong bg-accent text-bg shadow-[0_0_0_1px_var(--color-accent-strong)]'
+                    : 'border-accent/70 bg-accent text-bg hover:bg-accent-strong'
+                  dateClass = 'text-bg'
+                  subClass = 'text-bg/80'
+                } else if (isActivity) {
+                  cellClass = isToday
+                    ? 'border-accent/40 bg-card hover:bg-card-hover'
+                    : 'border-line bg-card hover:bg-card-hover'
+                  dateClass = isToday ? 'text-accent' : 'text-ink'
+                  subClass = 'text-ink-muted'
+                } else if (isToday) {
+                  cellClass = 'border-accent/40 bg-card opacity-100 cursor-not-allowed'
+                  dateClass = 'text-accent'
+                  subClass = 'text-ink-dim'
+                }
 
                 return (
                   <button
                     key={di}
-                    onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                    className={`rounded-xl border-2 p-3 text-left transition-all min-h-[88px] ${
-                      isSelected
-                        ? 'border-blue-500 bg-blue-50'
-                        : isToday
-                          ? 'border-blue-200 bg-white hover:border-blue-300'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
+                    onClick={() => isActivity && setSelectedDate(dateStr)}
+                    disabled={!isActivity}
+                    className={`relative aspect-square rounded-lg border p-1.5 flex flex-col items-center justify-between text-center transition-all ${
+                      isActivity ? 'active:scale-95' : ''
+                    } ${cellClass}`}
                   >
-                    <div className="mb-1">
-                      <span
-                        className={`text-base font-bold ${isToday ? 'text-blue-600' : 'text-gray-800'}`}
-                      >
-                        {date.getDate()}
-                      </span>
-                    </div>
-                    {topMovie ? (
-                      <div className="text-xs">
-                        <p className="font-medium text-gray-700 truncate">{topMovie.title}</p>
-                        <p className="text-gray-400 mt-0.5">
-                          {topMovie.count}票 (全{totalVotes}票)
-                        </p>
+                    <span className={`text-base font-bold leading-none ${dateClass}`}>
+                      {date.getDate()}
+                    </span>
+                    {isActivity ? (
+                      <div className="flex flex-col items-center gap-0.5 w-full px-0.5 min-h-0">
+                        {periodLocked ? (
+                          assignment?.movie_title ? (
+                            <span className={`text-[11px] font-bold leading-tight line-clamp-2 max-w-full ${subClass}`}>
+                              {assignment.movie_title}
+                            </span>
+                          ) : assignment?.host_user_id ? (
+                            <span className={`text-[11px] leading-tight line-clamp-2 max-w-full ${subClass}`}>
+                              {hostName ?? '主催者'}
+                            </span>
+                          ) : (
+                            <span className={`text-[11px] leading-none ${subClass}`}>休止</span>
+                          )
+                        ) : (
+                          <>
+                            {roomLabel && (
+                              <span className={`text-[10px] font-medium leading-none truncate max-w-full ${subClass}`}>
+                                {roomLabel}
+                              </span>
+                            )}
+                            {timeLabel ? (
+                              <span className={`text-[10px] font-medium leading-none ${subClass}`}>
+                                {timeLabel}
+                              </span>
+                            ) : !roomLabel ? (
+                              <span className={`text-[11px] leading-none ${subClass}`}>-</span>
+                            ) : null}
+                          </>
+                        )}
+                        {goingCount > 0 && periodLocked && (
+                          <span
+                            className={`inline-flex items-center gap-0.5 text-[10px] font-semibold leading-none ${subClass}`}
+                          >
+                            <UsersIcon size={10} />
+                            {goingCount}
+                          </span>
+                        )}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400">投票なし</p>
+                      <span className={`text-[11px] leading-none ${subClass}`}>休</span>
+                    )}
+                    {periodLocked && assignment?.movie_title && (
+                      <span className="absolute top-1 right-1 text-bg">
+                        <FilmIcon size={11} />
+                      </span>
                     )}
                   </button>
                 )
@@ -247,70 +435,48 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Voting panel */}
-      {selectedDate && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">
-            {(() => {
-              const d = new Date(selectedDate + 'T00:00:00')
-              return `${d.getMonth() + 1}月${d.getDate()}日（${DAY_LABELS[d.getDay() - 1]}）`
-            })()}
-            の投票
-          </h3>
+      <div className="flex items-center justify-center gap-4 text-xs text-ink-muted pt-1">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-accent border border-accent/70" />
+          活動日（確定）
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-card border border-line" />
+          活動可能日
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-card border border-line opacity-40" />
+          休み
+        </span>
+      </div>
 
-          {movies.length === 0 ? (
-            <p className="text-gray-500 text-sm">
-              映画が登録されていません。「映画一覧」ページから追加してください。
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {movies
-                .map((movie) => {
-                  const votes = selectedDayVotes[movie.id] ?? []
-                  const hasVoted = votes.some((v) => v.user_id === user!.id)
-                  return { movie, votes, hasVoted }
-                })
-                .sort((a, b) => b.votes.length - a.votes.length)
-                .map(({ movie, votes, hasVoted }) => (
-                  <div
-                    key={movie.id}
-                    className={`flex items-center justify-between rounded-lg border px-4 py-3 transition-colors ${
-                      hasVoted ? 'border-blue-200 bg-blue-50' : 'border-gray-200'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium text-gray-800">{movie.title}</span>
-                      {movie.description && (
-                        <span className="ml-2 text-sm text-gray-500">{movie.description}</span>
-                      )}
-                      {votes.length > 0 && (
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {votes.map((v) => v.profiles?.display_name ?? '?').join('、')}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 ml-4">
-                      <span
-                        className={`text-sm font-bold ${votes.length > 0 ? 'text-blue-600' : 'text-gray-400'}`}
-                      >
-                        {votes.length}票
-                      </span>
-                      <button
-                        onClick={() => toggleVote(movie.id)}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                          hasVoted
-                            ? 'bg-blue-600 text-white hover:bg-blue-700'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {hasVoted ? '投票済み' : '投票する'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
+      <p className="text-sm text-ink-dim text-center">
+        {periodLocked
+          ? '主催者と上映作品が確定しています'
+          : user
+            ? '申請受付中です。「申請」タブから希望日を提出してください'
+            : '申請受付中です。ログインすると希望日を提出できます'}
+      </p>
+
+      {selectedDate && selectedActivity?.active && (
+        <DayPreferenceModal
+          mode="view"
+          dateStr={selectedDate}
+          currentUserId={user?.id ?? null}
+          period={period}
+          activityStart={selectedActivity.start_time}
+          activityEnd={selectedActivity.end_time}
+          activityRoom={selectedActivity.room}
+          myPreferences={[]}
+          preferencesForDate={[]}
+          assignment={selectedAssignment}
+          hostName={selectedHostName}
+          attendances={attendancesByDate.get(selectedDate) ?? []}
+          onSavePreferences={async () => null}
+          onAttendanceChange={setAttendance}
+          onAssignmentSaved={fetchData}
+          onClose={() => setSelectedDate(null)}
+        />
       )}
     </div>
   )

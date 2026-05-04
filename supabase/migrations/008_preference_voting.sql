@@ -1,77 +1,21 @@
 -- ============================================
--- 映画鑑賞サークル — Supabase データベーススキーマ
--- 投票方式: 希望順位マッチング（多数決ではない）
--- Supabase の SQL Editor で実行してください
+-- 008_preference_voting.sql
+-- 投票方式の全面刷新: 多数決 → 希望順位マッチング
+-- 旧テーブル(movies/votes/comments/activity_decisions)を破棄し、
+-- 新テーブル(activity_periods/date_preferences/activity_assignments)を作成
 -- ============================================
 
--- 1. profiles テーブル
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  username text unique not null,
-  display_name text not null,
-  is_admin boolean default false,
-  created_at timestamptz default now()
-);
+-- 1. 旧テーブル・関数の削除
+-- テーブルを先にCASCADE削除（依存ポリシーも一緒に削除される）してから関数を削除する
+drop table if exists public.activity_decisions cascade;
+drop table if exists public.votes cascade;
+drop table if exists public.comments cascade;
+drop table if exists public.movies cascade;
+drop function if exists public.lock_activity_decision(date);
+drop function if exists public.is_voting_open(date);
 
--- 2. activity_rules テーブル（曜日ごとの活動日ルール）
-create table public.activity_rules (
-  weekday int primary key check (weekday between 1 and 7),
-  enabled boolean not null default false,
-  start_time time not null default '19:00',
-  end_time time not null default '21:00',
-  room text,
-  updated_at timestamptz default now()
-);
-
-insert into public.activity_rules (weekday, enabled, start_time, end_time) values
-  (1, false, '19:00', '21:00'),
-  (2, false, '19:00', '21:00'),
-  (3, false, '19:00', '21:00'),
-  (4, false, '19:00', '21:00'),
-  (5, false, '19:00', '21:00');
-
--- 3. activity_days テーブル（日付単位の上書き）
-create table public.activity_days (
-  date date primary key,
-  is_active boolean not null,
-  start_time time,
-  end_time time,
-  room text,
-  note text,
-  updated_at timestamptz default now()
-);
-
--- 4. is_activity_day 関数
-create or replace function public.is_activity_day(d date)
-returns boolean
-language sql
-stable
-as $$
-  select coalesce(
-    (select is_active from public.activity_days where date = d),
-    (select enabled from public.activity_rules where weekday = extract(isodow from d)::int),
-    false
-  );
-$$;
-
--- 5. activity_attendances テーブル: 活動日への参加表明
-create table public.activity_attendances (
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  date date not null,
-  status text not null check (status in ('going', 'not_going')),
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  primary key (user_id, date)
-);
-
-create index activity_attendances_date_idx on public.activity_attendances(date);
-
--- ============================================
--- 希望順位マッチング関連
--- ============================================
-
--- 6. activity_periods テーブル: 月単位の希望提出期間
-create table public.activity_periods (
+-- 2. 月単位の希望提出期間
+create table if not exists public.activity_periods (
   id uuid primary key default gen_random_uuid(),
   year int not null,
   month int not null check (month between 1 and 12),
@@ -81,8 +25,8 @@ create table public.activity_periods (
   unique (year, month)
 );
 
--- 7. date_preferences テーブル: ユーザーの希望順位
-create table public.date_preferences (
+-- 3. ユーザーの希望順位
+create table if not exists public.date_preferences (
   id uuid primary key default gen_random_uuid(),
   period_id uuid not null references public.activity_periods(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -93,11 +37,11 @@ create table public.date_preferences (
   unique (user_id, period_id, rank)
 );
 
-create index date_preferences_period_date_idx
+create index if not exists date_preferences_period_date_idx
   on public.date_preferences(period_id, date);
 
--- 8. activity_assignments テーブル: 集計後の主催者と映画
-create table public.activity_assignments (
+-- 4. 集計後に確定した主催者と映画
+create table if not exists public.activity_assignments (
   date date primary key,
   period_id uuid not null references public.activity_periods(id) on delete cascade,
   host_user_id uuid references public.profiles(id) on delete set null,
@@ -111,10 +55,15 @@ create table public.activity_assignments (
   movie_updated_at timestamptz
 );
 
-create index activity_assignments_period_idx
+create index if not exists activity_assignments_period_idx
   on public.activity_assignments(period_id);
 
--- 9. ensure_period RPC: 月の期間レコードを取得 or 作成
+-- ============================================
+-- RPC関数
+-- ============================================
+
+-- ensure_period: 月の期間レコードを取得 or 作成
+-- デフォルト締切は前月の最終日12:00 JST
 create or replace function public.ensure_period(p_year int, p_month int)
 returns uuid
 language plpgsql
@@ -151,7 +100,7 @@ $$;
 
 grant execute on function public.ensure_period(int, int) to authenticated;
 
--- 10. set_my_preferences RPC: 自分の希望順位を一括置換
+-- set_my_preferences: 自分の希望順位を一括置換（dates配列の順序がそのまま順位になる）
 create or replace function public.set_my_preferences(
   p_period_id uuid,
   p_dates date[]
@@ -209,7 +158,8 @@ $$;
 
 grant execute on function public.set_my_preferences(uuid, date[]) to authenticated;
 
--- 11. lock_activity_period RPC: 段階的マッチングで主催者を確定
+-- lock_activity_period: 段階的マッチングで主催者を確定
+-- rank 1, 2, 3... の順で各日について抽選を行う
 create or replace function public.lock_activity_period(p_period_id uuid)
 returns void
 language plpgsql
@@ -273,7 +223,7 @@ $$;
 
 grant execute on function public.lock_activity_period(uuid) to authenticated;
 
--- 12. update_my_assignment_movie RPC: 主催者本人が映画情報を更新
+-- update_my_assignment_movie: 主催者本人が映画情報を更新
 create or replace function public.update_my_assignment_movie(
   p_date date,
   p_title text,
@@ -319,78 +269,35 @@ $$;
 grant execute on function public.update_my_assignment_movie(date, text, text, int, text, text, text) to authenticated;
 
 -- ============================================
--- Row Level Security (RLS)
+-- RLS
 -- ============================================
 
-alter table public.profiles enable row level security;
-alter table public.activity_rules enable row level security;
-alter table public.activity_days enable row level security;
-alter table public.activity_attendances enable row level security;
 alter table public.activity_periods enable row level security;
 alter table public.date_preferences enable row level security;
 alter table public.activity_assignments enable row level security;
 
--- profiles: 認証済みユーザーは全員閲覧可
-create policy "profiles_select" on public.profiles
-  for select to authenticated using (true);
-
-create policy "profiles_update" on public.profiles
-  for update to authenticated using (id = auth.uid());
-
-create policy "profiles_insert" on public.profiles
-  for insert to authenticated with check (true);
-
--- activity_rules: 全員閲覧可、管理者のみ更新可
-create policy "activity_rules_select" on public.activity_rules
-  for select to authenticated using (true);
-create policy "activity_rules_update" on public.activity_rules
-  for update to authenticated
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin))
-  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
-
--- activity_days: 全員閲覧可、管理者のみ編集可
-create policy "activity_days_select" on public.activity_days
-  for select to authenticated using (true);
-create policy "activity_days_insert" on public.activity_days
-  for insert to authenticated
-  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
-create policy "activity_days_update" on public.activity_days
-  for update to authenticated
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin))
-  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
-create policy "activity_days_delete" on public.activity_days
-  for delete to authenticated
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
-
--- activity_attendances: 全員閲覧可、自分の参加表明のみ操作可
-create policy "activity_attendances_select" on public.activity_attendances
-  for select to authenticated using (true);
-create policy "activity_attendances_insert" on public.activity_attendances
-  for insert to authenticated
-  with check (auth.uid() = user_id and public.is_activity_day(date));
-create policy "activity_attendances_update" on public.activity_attendances
-  for update to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-create policy "activity_attendances_delete" on public.activity_attendances
-  for delete to authenticated
-  using (auth.uid() = user_id);
-
 -- activity_periods: 全員閲覧可、書き込みは管理者のみ
+drop policy if exists "activity_periods_select" on public.activity_periods;
 create policy "activity_periods_select" on public.activity_periods
   for select to authenticated using (true);
+
+drop policy if exists "activity_periods_insert_admin" on public.activity_periods;
 create policy "activity_periods_insert_admin" on public.activity_periods
   for insert to authenticated
   with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
+
+drop policy if exists "activity_periods_update_admin" on public.activity_periods;
 create policy "activity_periods_update_admin" on public.activity_periods
   for update to authenticated
   using (exists (select 1 from public.profiles where id = auth.uid() and is_admin))
   with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
 
--- date_preferences: 全員閲覧可、書き込みは set_my_preferences RPC 経由のみ
+-- date_preferences: 全員閲覧可、書き込みは set_my_preferences RPC 経由のみ（ポリシー定義なし=拒否）
+drop policy if exists "date_preferences_select" on public.date_preferences;
 create policy "date_preferences_select" on public.date_preferences
   for select to authenticated using (true);
 
--- activity_assignments: 全員閲覧可、書き込みは RPC 経由のみ
+-- activity_assignments: 全員閲覧可、書き込みは lock_activity_period / update_my_assignment_movie RPC 経由のみ
+drop policy if exists "activity_assignments_select" on public.activity_assignments;
 create policy "activity_assignments_select" on public.activity_assignments
   for select to authenticated using (true);
