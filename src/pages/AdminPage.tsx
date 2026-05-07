@@ -1,9 +1,11 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase, supabaseAdmin } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import { PlusIcon } from '../components/icons'
 import ActivityScheduleEditor from '../components/ActivityScheduleEditor'
 import PeriodAdminPanel from '../components/PeriodAdminPanel'
 import PreferenceListPanel from '../components/PreferenceListPanel'
+import MemberRow from '../components/MemberRow'
 
 type Profile = {
   id: string
@@ -14,6 +16,7 @@ type Profile = {
 }
 
 export default function AdminPage() {
+  const { user } = useAuth()
   const [members, setMembers] = useState<Profile[]>([])
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -173,20 +176,12 @@ export default function AdminPage() {
 
       <div className="space-y-2">
         {members.map((m) => (
-          <div
+          <MemberRow
             key={m.id}
-            className="bg-card rounded-xl border border-line px-4 py-3 flex items-center justify-between"
-          >
-            <div className="min-w-0">
-              <p className="font-medium text-ink">{m.display_name}</p>
-              <p className="text-xs text-ink-muted truncate">@{m.username}</p>
-            </div>
-            {m.is_admin && (
-              <span className="shrink-0 ml-3 inline-block px-2 py-0.5 text-[11px] font-semibold bg-accent/15 text-accent rounded-full border border-accent/30">
-                管理者
-              </span>
-            )}
-          </div>
+            member={m}
+            isSelf={user?.id === m.id}
+            onChanged={fetchMembers}
+          />
         ))}
       </div>
       </section>
