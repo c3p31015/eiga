@@ -19,6 +19,7 @@ import HostMovieEditor from './HostMovieEditor'
 type Props = {
   dateStr: string
   currentUserId: string | null
+  isAdmin: boolean
   activityStart: string | null
   activityEnd: string | null
   activityRoom: string | null
@@ -34,9 +35,24 @@ type Props = {
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
+// 匿名表示用: 自分が含まれていれば「あなたを含むN人」、そうでなければ「N人」
+function describeAnonymousList(
+  list: Attendance[],
+  currentUserId: string | null,
+  label: string
+): string {
+  const total = list.length
+  const includesMe = !!currentUserId && list.some((a) => a.user_id === currentUserId)
+  if (includesMe) {
+    return total === 1 ? `あなたのみ${label}` : `あなたを含む${total}人が${label}`
+  }
+  return `${total}人が${label}`
+}
+
 export default function DayPreferenceModal({
   dateStr,
   currentUserId,
+  isAdmin,
   activityStart,
   activityEnd,
   activityRoom,
@@ -127,10 +143,13 @@ export default function DayPreferenceModal({
                 assignment={assignment}
                 hostName={hostName}
                 isHost={!!currentUserId && assignment?.host_user_id === currentUserId}
+                isAdmin={isAdmin}
                 onAssignmentSaved={onAssignmentSaved}
               />
               <AttendanceSection
                 isAuthenticated={!!currentUserId}
+                isAdmin={isAdmin}
+                currentUserId={currentUserId}
                 myStatus={myAttendance?.status ?? null}
                 going={goingAttendees}
                 notGoing={notGoingAttendees}
@@ -141,6 +160,8 @@ export default function DayPreferenceModal({
           ) : assignment && assignment.host_user_id ? (
             <AttendanceSection
               isAuthenticated={!!currentUserId}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
               myStatus={myAttendance?.status ?? null}
               going={goingAttendees}
               notGoing={notGoingAttendees}
@@ -165,11 +186,13 @@ function AssignmentSection({
   assignment,
   hostName,
   isHost,
+  isAdmin,
   onAssignmentSaved,
 }: {
   assignment: ActivityAssignment | null
   hostName: string | null
   isHost: boolean
+  isAdmin: boolean
   onAssignmentSaved: () => void
 }) {
   if (!assignment) {
@@ -195,7 +218,9 @@ function AssignmentSection({
         <p className="text-[11px] font-semibold text-accent uppercase tracking-wider mb-1">
           主催者
         </p>
-        <p className="text-base font-bold text-ink">{hostName ?? '不明'}</p>
+        <p className="text-base font-bold text-ink">
+          {isHost ? 'あなた' : isAdmin ? hostName ?? '不明' : 'メンバー'}
+        </p>
       </div>
 
       {assignment.movie_title ? (
@@ -274,6 +299,8 @@ function AssignmentSection({
 
 function AttendanceSection({
   isAuthenticated,
+  isAdmin,
+  currentUserId,
   myStatus,
   going,
   notGoing,
@@ -281,6 +308,8 @@ function AttendanceSection({
   onChange,
 }: {
   isAuthenticated: boolean
+  isAdmin: boolean
+  currentUserId: string | null
   myStatus: AttendanceStatus | null
   going: Attendance[]
   notGoing: Attendance[]
@@ -330,7 +359,9 @@ function AttendanceSection({
 
       {going.length > 0 ? (
         <p className="text-xs text-ink-muted">
-          {going.map((a) => a.profiles?.display_name ?? '?').join('、')}
+          {isAdmin
+            ? going.map((a) => a.profiles?.display_name ?? '?').join('、')
+            : describeAnonymousList(going, currentUserId, '参加表明')}
         </p>
       ) : (
         <p className="text-xs text-ink-dim">まだ参加表明はありません</p>
@@ -338,7 +369,10 @@ function AttendanceSection({
 
       {notGoing.length > 0 && (
         <p className="text-[11px] text-ink-dim">
-          不参加: {notGoing.map((a) => a.profiles?.display_name ?? '?').join('、')}
+          不参加:{' '}
+          {isAdmin
+            ? notGoing.map((a) => a.profiles?.display_name ?? '?').join('、')
+            : describeAnonymousList(notGoing, currentUserId, '不参加')}
         </p>
       )}
     </div>

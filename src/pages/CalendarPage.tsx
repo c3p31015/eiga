@@ -53,7 +53,8 @@ function getMonthWeeks(year: number, month: number): (Date | null)[][] {
 }
 
 export default function CalendarPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const isAdmin = !!profile?.is_admin
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
@@ -241,9 +242,10 @@ export default function CalendarPage() {
     ? resolveActivity(selectedDate, rulesMap, daysMap)
     : null
   const selectedAssignment = selectedDate ? assignmentsByDate.get(selectedDate) ?? null : null
-  const selectedHostName = selectedAssignment?.host_user_id
-    ? profilesById.get(selectedAssignment.host_user_id) ?? null
-    : null
+  const selectedHostName =
+    selectedAssignment?.host_user_id && isAdmin
+      ? profilesById.get(selectedAssignment.host_user_id) ?? null
+      : null
 
   const periodLocked = !!period?.locked_at
   const periodOpen = isPeriodOpen(period)
@@ -341,8 +343,13 @@ export default function CalendarPage() {
                 const assignment = assignmentsByDate.get(dateStr)
                 const dayAttendances = attendancesByDate.get(dateStr) ?? []
                 const goingCount = dayAttendances.filter((a) => a.status === 'going').length
+                const hostIsMe = !!assignment?.host_user_id && assignment.host_user_id === user?.id
                 const hostName = assignment?.host_user_id
-                  ? profilesById.get(assignment.host_user_id) ?? null
+                  ? hostIsMe
+                    ? 'あなた'
+                    : isAdmin
+                      ? profilesById.get(assignment.host_user_id) ?? null
+                      : null
                   : null
 
                 const isConfirmedActivity = periodLocked && !!assignment?.host_user_id
@@ -462,6 +469,7 @@ export default function CalendarPage() {
         <DayPreferenceModal
           dateStr={selectedDate}
           currentUserId={user?.id ?? null}
+          isAdmin={isAdmin}
           activityStart={selectedActivity.start_time}
           activityEnd={selectedActivity.end_time}
           activityRoom={selectedActivity.room}

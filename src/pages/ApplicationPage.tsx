@@ -532,21 +532,26 @@ export default function ApplicationPage() {
               </p>
 
               <div className="space-y-2">
-                {myPreferences.map((pref, idx) => (
-                  <PreferenceDateCard
-                    key={pref.id}
-                    pref={pref}
-                    isFirst={idx === 0}
-                    isLast={idx === myPreferences.length - 1}
-                    expanded={expandedDates.has(pref.date)}
-                    disabled={!canEdit}
-                    onToggleExpand={() => toggleExpand(pref.date)}
-                    onMoveUp={() => moveRank(pref.date, -1)}
-                    onMoveDown={() => moveRank(pref.date, 1)}
-                    onRemove={() => removePreference(pref.date)}
-                    onSaveWish={(payload) => saveDateWish(pref.date, payload)}
-                  />
-                ))}
+                {myPreferences.map((pref, idx) => {
+                  const activity = resolveActivity(pref.date, rulesMap, daysMap)
+                  return (
+                    <PreferenceDateCard
+                      key={pref.id}
+                      pref={pref}
+                      isFirst={idx === 0}
+                      isLast={idx === myPreferences.length - 1}
+                      expanded={expandedDates.has(pref.date)}
+                      disabled={!canEdit}
+                      activityStart={activity.start_time}
+                      activityEnd={activity.end_time}
+                      onToggleExpand={() => toggleExpand(pref.date)}
+                      onMoveUp={() => moveRank(pref.date, -1)}
+                      onMoveDown={() => moveRank(pref.date, 1)}
+                      onRemove={() => removePreference(pref.date)}
+                      onSaveWish={(payload) => saveDateWish(pref.date, payload)}
+                    />
+                  )
+                })}
               </div>
             </section>
           ) : (

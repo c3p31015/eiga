@@ -8,7 +8,13 @@ import {
   FilmIcon,
   TrashIcon,
 } from './icons'
-import { rankLabel, type DatePreference } from '../lib/activity'
+import {
+  formatTimeRange,
+  minutesToTimeString,
+  rankLabel,
+  timeStringToMinutes,
+  type DatePreference,
+} from '../lib/activity'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -27,6 +33,8 @@ type Props = {
   isLast: boolean
   expanded: boolean
   disabled: boolean
+  activityStart: string | null
+  activityEnd: string | null
   onToggleExpand: () => void
   onMoveUp: () => void
   onMoveDown: () => void
@@ -40,6 +48,8 @@ export default function PreferenceDateCard({
   isLast,
   expanded,
   disabled,
+  activityStart,
+  activityEnd,
   onToggleExpand,
   onMoveUp,
   onMoveDown,
@@ -83,6 +93,20 @@ export default function PreferenceDateCard({
   const durationOk = Number.isFinite(durationNum) && durationNum > 0
   const requiredMissing = titleFilled && (!startTime || !durationOk)
 
+  const activityStartMin = timeStringToMinutes(activityStart)
+  const activityEndMin = timeStringToMinutes(activityEnd)
+  const startMin = timeStringToMinutes(startTime)
+  const endMin = startMin !== null && durationOk ? startMin + durationNum : null
+
+  const startBeforeActivity =
+    titleFilled && startMin !== null && activityStartMin !== null && startMin < activityStartMin
+  const endAfterActivity =
+    titleFilled && endMin !== null && activityEndMin !== null && endMin > activityEndMin
+  const outOfActivity = startBeforeActivity || endAfterActivity
+
+  const activityRangeLabel = formatTimeRange(activityStart, activityEnd)
+  const computedEndLabel = endMin !== null ? minutesToTimeString(endMin) : null
+
   const currentTitle = pref.movie_title ?? ''
   const currentStart = pref.movie_start_time?.slice(0, 5) ?? ''
   const currentDuration =
@@ -111,6 +135,20 @@ export default function PreferenceDateCard({
       }
       if (!durationOk) {
         setMessage({ kind: 'err', text: '上映時間（分）を正の整数で入力してください' })
+        return
+      }
+      if (startBeforeActivity) {
+        setMessage({
+          kind: 'err',
+          text: `開始時刻は活動時間（${activityRangeLabel}）の中にしてください`,
+        })
+        return
+      }
+      if (endAfterActivity) {
+        setMessage({
+          kind: 'err',
+          text: `終了時刻（${computedEndLabel}）が活動時間（${activityRangeLabel}）を超えています`,
+        })
         return
       }
     }
@@ -231,6 +269,8 @@ export default function PreferenceDateCard({
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
                   disabled={disabled}
+                  min={activityStart ?? undefined}
+                  max={activityEnd ?? undefined}
                   className="w-full px-3 py-2 bg-bg border border-line rounded-lg text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent disabled:opacity-50"
                 />
               </div>
@@ -250,6 +290,12 @@ export default function PreferenceDateCard({
                 />
               </div>
             </div>
+            {activityRangeLabel && (
+              <p className="text-[11px] text-ink-muted">
+                活動時間: {activityRangeLabel}
+                {computedEndLabel && titleFilled && ` ／ 入力中の終了予定: ${computedEndLabel}`}
+              </p>
+            )}
 
             <div>
               <label className="block text-[11px] font-medium text-ink-muted mb-1">ジャンル</label>
@@ -295,6 +341,13 @@ export default function PreferenceDateCard({
               タイトルを入れたら開始時刻と上映時間も必須です
             </p>
           )}
+          {outOfActivity && !requiredMissing && (
+            <p className="text-[11px] text-danger bg-danger-bg/40 border border-danger/30 rounded-lg px-3 py-2">
+              {startBeforeActivity
+                ? `開始時刻が活動時間（${activityRangeLabel}）より前です`
+                : `終了予定 ${computedEndLabel} が活動時間（${activityRangeLabel}）を超えています`}
+            </p>
+          )}
 
           <div className="flex items-center justify-between gap-2">
             <button
@@ -307,7 +360,7 @@ export default function PreferenceDateCard({
             </button>
             <button
               onClick={handleSave}
-              disabled={disabled || saving || !dirty || requiredMissing}
+              disabled={disabled || saving || !dirty || requiredMissing || outOfActivity}
               className="px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {saving ? '保存中...' : '映画情報を保存'}

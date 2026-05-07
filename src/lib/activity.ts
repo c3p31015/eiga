@@ -117,6 +117,26 @@ export function resolveActivity(
   return { active: false, start_time: null, end_time: null, room: null, source: 'none' }
 }
 
+// "HH:MM"(:SS可) を 0時からの分数に変換。不正な値は null
+export function timeStringToMinutes(t: string | null | undefined): number | null {
+  if (!t) return null
+  const m = /^(\d{1,2}):(\d{2})/.exec(t)
+  if (!m) return null
+  const h = Number(m[1])
+  const mm = Number(m[2])
+  if (!Number.isFinite(h) || !Number.isFinite(mm)) return null
+  return h * 60 + mm
+}
+
+// 分数を "HH:MM" に。24時を超える場合もそのまま桁数を伸ばす
+export function minutesToTimeString(total: number): string {
+  const sign = total < 0 ? '-' : ''
+  const v = Math.abs(total)
+  const hh = Math.floor(v / 60)
+  const mm = v % 60
+  return `${sign}${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
 export function formatTimeRange(start: string | null, end: string | null): string {
   const s = formatTime(start)
   const e = formatTime(end)

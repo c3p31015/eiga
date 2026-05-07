@@ -3,6 +3,7 @@ import { supabase, supabaseAdmin } from '../lib/supabase'
 import { PlusIcon } from '../components/icons'
 import ActivityScheduleEditor from '../components/ActivityScheduleEditor'
 import PeriodAdminPanel from '../components/PeriodAdminPanel'
+import PreferenceListPanel from '../components/PreferenceListPanel'
 
 type Profile = {
   id: string
@@ -193,6 +194,8 @@ export default function AdminPage() {
       <ActivityScheduleEditor />
 
       <PeriodAdminPanel />
+
+      <PreferenceListPanel />
     </div>
   )
 }
