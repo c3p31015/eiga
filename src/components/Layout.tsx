@@ -1,9 +1,12 @@
+import { useState, type FormEvent } from 'react'
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import { CalendarIcon, FilmIcon, UsersIcon, LogOutIcon } from './icons'
 
 export default function Layout() {
   const { user, profile, signOut } = useAuth()
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
 
   const navItems = [{ to: '/', label: 'カレンダー', icon: CalendarIcon, end: true }]
   if (user) {
@@ -27,6 +30,12 @@ export default function Layout() {
                 <span className="text-sm text-ink-muted truncate max-w-[8rem]">
                   {profile?.display_name}
                 </span>
+                <button
+                  onClick={() => setPasswordModalOpen(true)}
+                  className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+                >
+                  パスワード変更
+                </button>
                 <button
                   onClick={signOut}
                   aria-label="ログアウト"
@@ -73,6 +82,114 @@ export default function Layout() {
           ))}
         </div>
       </nav>
+
+      {passwordModalOpen && (
+        <PasswordChangeModal onClose={() => setPasswordModalOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+function PasswordChangeModal({ onClose }: { onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (password.length < 6) {
+      setMessage({ kind: 'err', text: 'パスワードは6文字以上で入力してください' })
+      return
+    }
+    if (password !== confirm) {
+      setMessage({ kind: 'err', text: '確認用パスワードが一致しません' })
+      return
+    }
+
+    setSubmitting(true)
+    setMessage(null)
+    const { error } = await supabase.auth.updateUser({ password })
+    setSubmitting(false)
+    if (error) {
+      setMessage({ kind: 'err', text: `パスワード変更に失敗しました: ${error.message}` })
+      return
+    }
+    setPassword('')
+    setConfirm('')
+    setMessage({ kind: 'ok', text: 'パスワードを変更しました' })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/55 px-4 py-6 flex items-center justify-center">
+      <div className="w-full max-w-sm rounded-xl border border-line bg-card p-5 space-y-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-ink">パスワード変更</h2>
+            <p className="text-xs text-ink-muted mt-1">
+              次回ログインから新しいパスワードを使います。
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-2 py-1 text-xs rounded-md text-ink-muted hover:text-ink hover:bg-bg transition-colors"
+          >
+            閉じる
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">
+              新しいパスワード
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+              className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              placeholder="6文字以上"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">
+              確認用
+            </label>
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+              className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+            />
+          </div>
+
+          {message && (
+            <p
+              className={`text-sm rounded-lg border px-3 py-2 ${
+                message.kind === 'ok'
+                  ? 'text-success bg-success-bg/60 border-success/30'
+                  : 'text-danger bg-danger-bg/60 border-danger/30'
+              }`}
+            >
+              {message.text}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full px-4 py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? '変更中...' : 'パスワードを変更'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

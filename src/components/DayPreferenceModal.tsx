@@ -25,7 +25,6 @@ type Props = {
   activityRoom: string | null
   // 確定済みの場合の割り当て
   assignment: ActivityAssignment | null
-  hostName: string | null
   attendances: Attendance[]
   periodLocked: boolean
   onAttendanceChange: (status: AttendanceStatus | null) => Promise<string | null>
@@ -57,7 +56,6 @@ export default function DayPreferenceModal({
   activityEnd,
   activityRoom,
   assignment,
-  hostName,
   attendances,
   periodLocked,
   onAttendanceChange,
@@ -141,9 +139,7 @@ export default function DayPreferenceModal({
             <>
               <AssignmentSection
                 assignment={assignment}
-                hostName={hostName}
                 isHost={!!currentUserId && assignment?.host_user_id === currentUserId}
-                isAdmin={isAdmin}
                 onAssignmentSaved={onAssignmentSaved}
               />
               <AttendanceSection
@@ -184,15 +180,11 @@ export default function DayPreferenceModal({
 
 function AssignmentSection({
   assignment,
-  hostName,
   isHost,
-  isAdmin,
   onAssignmentSaved,
 }: {
   assignment: ActivityAssignment | null
-  hostName: string | null
   isHost: boolean
-  isAdmin: boolean
   onAssignmentSaved: () => void
 }) {
   if (!assignment) {
@@ -214,15 +206,6 @@ function AssignmentSection({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3">
-        <p className="text-[11px] font-semibold text-accent uppercase tracking-wider mb-1">
-          主催者
-        </p>
-        <p className="text-base font-bold text-ink">
-          {isHost ? 'あなた' : isAdmin ? hostName ?? '不明' : 'メンバー'}
-        </p>
-      </div>
-
       {assignment.movie_title ? (
         <div className="space-y-3">
           <div className="flex items-center gap-1.5">

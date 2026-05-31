@@ -66,7 +66,6 @@ export default function CalendarPage() {
   const [activityRules, setActivityRules] = useState<ActivityRule[]>([])
   const [activityDays, setActivityDays] = useState<ActivityDay[]>([])
   const [assignments, setAssignments] = useState<ActivityAssignment[]>([])
-  const [profilesById, setProfilesById] = useState<Map<string, string>>(new Map())
   const [attendances, setAttendances] = useState<Attendance[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -125,7 +124,7 @@ export default function CalendarPage() {
       periodId = (periodRow as { id: string } | null)?.id ?? null
     }
 
-    const [periodRes, rulesRes, daysRes, assignmentsRes, attendancesRes, profilesRes] =
+    const [periodRes, rulesRes, daysRes, assignmentsRes, attendancesRes] =
       await Promise.all([
         periodId
           ? supabase.from('activity_periods').select('*').eq('id', periodId).maybeSingle()
@@ -138,7 +137,7 @@ export default function CalendarPage() {
           .lte('date', lastDay),
         supabase
           .from('activity_assignments')
-          .select('*, profiles:host_user_id(display_name)')
+          .select('*')
           .gte('date', firstDay)
           .lte('date', lastDay),
         supabase
@@ -146,7 +145,6 @@ export default function CalendarPage() {
           .select('user_id, date, status, profiles(display_name)')
           .gte('date', firstDay)
           .lte('date', lastDay),
-        supabase.from('profiles').select('id, display_name'),
       ])
 
     setPeriod((periodRes.data as ActivityPeriod | null) ?? null)
@@ -154,11 +152,6 @@ export default function CalendarPage() {
     setActivityDays((daysRes.data as ActivityDay[]) ?? [])
     setAssignments((assignmentsRes.data as unknown as ActivityAssignment[]) ?? [])
     setAttendances((attendancesRes.data as unknown as Attendance[]) ?? [])
-    const map = new Map<string, string>()
-    for (const p of (profilesRes.data as { id: string; display_name: string }[]) ?? []) {
-      map.set(p.id, p.display_name)
-    }
-    setProfilesById(map)
 
     setLoading(false)
   }, [viewYear, viewMonth, user])
@@ -249,10 +242,6 @@ export default function CalendarPage() {
     ? resolveActivity(selectedDate, rulesMap, daysMap)
     : null
   const selectedAssignment = selectedDate ? assignmentsByDate.get(selectedDate) ?? null : null
-  const selectedHostName =
-    selectedAssignment?.host_user_id && isAdmin
-      ? profilesById.get(selectedAssignment.host_user_id) ?? null
-      : null
 
   const periodLocked = !!period?.locked_at
   const periodOpen = isPeriodOpen(period)
@@ -351,15 +340,6 @@ export default function CalendarPage() {
                 const assignment = assignmentsByDate.get(dateStr)
                 const dayAttendances = attendancesByDate.get(dateStr) ?? []
                 const goingCount = dayAttendances.filter((a) => a.status === 'going').length
-                const hostIsMe = !!assignment?.host_user_id && assignment.host_user_id === user?.id
-                const hostName = assignment?.host_user_id
-                  ? hostIsMe
-                    ? 'あなた'
-                    : isAdmin
-                      ? profilesById.get(assignment.host_user_id) ?? null
-                      : null
-                  : null
-
                 const isConfirmedActivity = periodLocked && !!assignment?.host_user_id
 
                 let cellClass = 'border-line bg-card opacity-40 cursor-not-allowed'
@@ -404,7 +384,7 @@ export default function CalendarPage() {
                             </span>
                           ) : assignment?.host_user_id ? (
                             <span className={`text-[11px] leading-tight line-clamp-2 max-w-full ${subClass}`}>
-                              {hostName ?? '主催者'}
+                              作品未定
                             </span>
                           ) : (
                             <span className={`text-[11px] leading-none ${subClass}`}>休止</span>
@@ -482,7 +462,6 @@ export default function CalendarPage() {
           activityEnd={selectedActivity.end_time}
           activityRoom={selectedActivity.room}
           assignment={selectedAssignment}
-          hostName={selectedHostName}
           attendances={attendancesByDate.get(selectedDate) ?? []}
           periodLocked={periodLocked}
           onAttendanceChange={setAttendance}
