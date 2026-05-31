@@ -43,10 +43,19 @@ function getMonthWeeks(year: number, month: number): (Date | null)[][] {
   return weeks
 }
 
-export default function ActivityScheduleEditor() {
-  const today = new Date()
-  const [viewYear, setViewYear] = useState(today.getFullYear())
-  const [viewMonth, setViewMonth] = useState(today.getMonth())
+type ActivityScheduleEditorProps = {
+  viewYear: number
+  viewMonth: number
+  onPrevMonth: () => void
+  onNextMonth: () => void
+}
+
+export default function ActivityScheduleEditor({
+  viewYear,
+  viewMonth,
+  onPrevMonth,
+  onNextMonth,
+}: ActivityScheduleEditorProps) {
   const [rules, setRules] = useState<ActivityRule[]>([])
   const [days, setDays] = useState<ActivityDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,7 +114,7 @@ export default function ActivityScheduleEditor() {
   }, [viewYear, viewMonth])
 
   useEffect(() => {
-    fetchData()
+    void Promise.resolve().then(fetchData)
   }, [fetchData])
 
   const updateRule = async (weekday: number, patch: Partial<ActivityRule>) => {
@@ -173,11 +182,7 @@ export default function ActivityScheduleEditor() {
           <h4 className="font-semibold text-ink">個別の日付設定</h4>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => {
-                const d = new Date(viewYear, viewMonth - 1, 1)
-                setViewYear(d.getFullYear())
-                setViewMonth(d.getMonth())
-              }}
+              onClick={onPrevMonth}
               aria-label="前月"
               className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card-hover transition-colors"
             >
@@ -187,11 +192,7 @@ export default function ActivityScheduleEditor() {
               {viewYear}年{viewMonth + 1}月
             </span>
             <button
-              onClick={() => {
-                const d = new Date(viewYear, viewMonth + 1, 1)
-                setViewYear(d.getFullYear())
-                setViewMonth(d.getMonth())
-              }}
+              onClick={onNextMonth}
               aria-label="翌月"
               className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card-hover transition-colors"
             >
@@ -317,7 +318,7 @@ function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
   const [roomDraft, setRoomDraft] = useState(rule.room ?? '')
 
   useEffect(() => {
-    setRoomDraft(rule.room ?? '')
+    void Promise.resolve().then(() => setRoomDraft(rule.room ?? ''))
   }, [rule.room])
 
   const commitRoom = () => {
@@ -440,16 +441,28 @@ function DateOverridePanel({
   const [room, setRoom] = useState(initialRoom)
   const [note, setNote] = useState(singleOverride?.note ?? '')
   const [saving, setSaving] = useState(false)
+  const resetKey = dates.join(',')
 
   useEffect(() => {
-    setMode(initialMode)
-    setTimeMode(initialTimeMode)
-    setStartTime(initialStart)
-    setEndTime(initialEnd)
-    setRoomMode(initialRoomMode)
-    setRoom(initialRoom)
-    setNote(singleOverride?.note ?? '')
-  }, [dates.join(',')])
+    void Promise.resolve().then(() => {
+      setMode(initialMode)
+      setTimeMode(initialTimeMode)
+      setStartTime(initialStart)
+      setEndTime(initialEnd)
+      setRoomMode(initialRoomMode)
+      setRoom(initialRoom)
+      setNote(singleOverride?.note ?? '')
+    })
+  }, [
+    resetKey,
+    initialMode,
+    initialTimeMode,
+    initialStart,
+    initialEnd,
+    initialRoomMode,
+    initialRoom,
+    singleOverride?.note,
+  ])
 
   const headingLabel = isBatch
     ? `${dates.length}件の日付`

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import PreferenceDateCard, { type DateWishPayload } from '../components/PreferenceDateCard'
@@ -12,6 +13,8 @@ import {
   formatTimeRange,
   formatDeadline,
   isPeriodOpen,
+  getStoredViewMonth,
+  storeViewMonth,
 } from '../lib/activity'
 
 const DAY_LABELS = ['月', '火', '水', '木', '金']
@@ -48,16 +51,38 @@ function getMonthWeeks(year: number, month: number): (Date | null)[][] {
   return weeks
 }
 
+function getMonthFromSearchParams(searchParams: URLSearchParams): { year: number; month: number } {
+  const today = new Date()
+  const year = Number(searchParams.get('year'))
+  const month = Number(searchParams.get('month'))
+
+  if (
+    Number.isInteger(year) &&
+    Number.isInteger(month) &&
+    year >= 2000 &&
+    year <= 2100 &&
+    month >= 1 &&
+    month <= 12
+  ) {
+    return { year, month: month - 1 }
+  }
+
+  return getStoredViewMonth(today)
+}
+
 export default function ApplicationPage() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const today = new Date()
-  const [viewYear, setViewYear] = useState(today.getFullYear())
-  const [viewMonth, setViewMonth] = useState(today.getMonth())
+  const initialMonth = getMonthFromSearchParams(searchParams)
+  const [viewYear, setViewYear] = useState(initialMonth.year)
+  const [viewMonth, setViewMonth] = useState(initialMonth.month)
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [activityRules, setActivityRules] = useState<ActivityRule[]>([])
   const [activityDays, setActivityDays] = useState<ActivityDay[]>([])
   const [preferences, setPreferences] = useState<DatePreference[]>([])
   const [loading, setLoading] = useState(true)
+  const [submittingPreferences, setSubmittingPreferences] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
 
@@ -134,31 +159,37 @@ export default function ApplicationPage() {
   }, [viewYear, viewMonth, user])
 
   useEffect(() => {
-    fetchData()
+    void Promise.resolve().then(() => fetchData())
   }, [fetchData])
+
+  useEffect(() => {
+    storeViewMonth(viewYear, viewMonth)
+  }, [viewYear, viewMonth])
+
+  const setVisibleMonth = (year: number, month: number) => {
+    setViewYear(year)
+    setViewMonth(month)
+    setSearchParams({ year: String(year), month: String(month + 1) })
+    storeViewMonth(year, month)
+    setExpandedDates(new Set())
+  }
 
   const prevMonth = () => {
     const d = new Date(viewYear, viewMonth - 1, 1)
-    setViewYear(d.getFullYear())
-    setViewMonth(d.getMonth())
-    setExpandedDates(new Set())
+    setVisibleMonth(d.getFullYear(), d.getMonth())
   }
   const nextMonth = () => {
     const d = new Date(viewYear, viewMonth + 1, 1)
-    setViewYear(d.getFullYear())
-    setViewMonth(d.getMonth())
-    setExpandedDates(new Set())
+    setVisibleMonth(d.getFullYear(), d.getMonth())
   }
   const thisMonth = () => {
     const now = new Date()
-    setViewYear(now.getFullYear())
-    setViewMonth(now.getMonth())
-    setExpandedDates(new Set())
+    setVisibleMonth(now.getFullYear(), now.getMonth())
   }
 
-  const flashError = (msg: string) => {
+  const flashError = useCallback((msg: string) => {
     setPageError(msg)
-  }
+  }, [])
 
   const savePreferenceDates = useCallback(
     async (dates: string[]): Promise<string | null> => {
@@ -187,7 +218,7 @@ export default function ApplicationPage() {
         )
         const mineNew: DatePreference[] = orderedDates.map((d, i) => {
           const existing = mineByDate.get(d)
-          if (existing) return { ...existing, rank: i + 1 }
+          if (existing) return { ...existing, rank: i + 1, submitted_at: null }
           // 新規追加: 一時的なIDで埋める（silent refetchで実IDに置換）
           return {
             id: `temp-${d}`,
@@ -195,12 +226,14 @@ export default function ApplicationPage() {
             user_id: user.id,
             date: d,
             rank: i + 1,
+            submitted_at: null,
             movie_title: null,
             movie_start_time: null,
             movie_duration_minutes: null,
             movie_genre: null,
             movie_watch_url: null,
             movie_description: null,
+            movie_has_gore: false,
           }
         })
         return [...others, ...mineNew]
@@ -237,8 +270,37 @@ export default function ApplicationPage() {
         flashError(err)
       }
     },
-    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates, flashError]
   )
+
+  const submitPreferences = useCallback(async (): Promise<void> => {
+    if (!period) return
+    if (myPreferences.length === 0) {
+      flashError('希望日を1件以上選んでから提出してください')
+      return
+    }
+
+    const incomplete = myPreferences.filter(
+      (p) => !p.movie_title || !p.movie_start_time || !p.movie_duration_minutes
+    )
+    if (incomplete.length > 0) {
+      flashError('提出するには、すべての希望日にタイトル・開始時刻・上映時間を入力してください')
+      setExpandedDates(new Set(incomplete.map((p) => p.date)))
+      return
+    }
+
+    setSubmittingPreferences(true)
+    const { error } = await supabase.rpc('submit_my_preferences', {
+      p_period_id: period.id,
+    })
+    setSubmittingPreferences(false)
+    if (error) {
+      flashError(`希望の提出に失敗しました: ${error.message}`)
+      return
+    }
+    await fetchData({ silent: true })
+    setPageError(null)
+  }, [period, myPreferences, fetchData, flashError])
 
   const moveRank = useCallback(
     async (date: string, direction: -1 | 1) => {
@@ -259,7 +321,7 @@ export default function ApplicationPage() {
         flashError(err)
       }
     },
-    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates, flashError]
   )
 
   const removePreference = useCallback(
@@ -282,7 +344,7 @@ export default function ApplicationPage() {
       }
       return null
     },
-    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates]
+    [myPreferences, preferences, applyOptimisticOrder, savePreferenceDates, flashError]
   )
 
   const saveDateWish = useCallback(
@@ -297,6 +359,7 @@ export default function ApplicationPage() {
         p_genre: payload.genre || null,
         p_watch_url: payload.watchUrl || null,
         p_description: payload.description || null,
+        p_has_gore: payload.hasGore,
       })
       if (error) return `映画情報の保存に失敗しました: ${error.message}`
       await fetchData({ silent: true })
@@ -321,7 +384,10 @@ export default function ApplicationPage() {
   const periodLocked = !!period?.locked_at
   const periodOpen = isPeriodOpen(period)
   const canEdit = !!period && periodOpen
-  const missingMovieCount = myPreferences.filter((p) => !p.movie_title).length
+  const incompleteMovieCount = myPreferences.filter(
+    (p) => !p.movie_title || !p.movie_start_time || !p.movie_duration_minutes
+  ).length
+  const submitted = myPreferences.length > 0 && myPreferences.every((p) => !!p.submitted_at)
 
   return (
     <div className="space-y-5">
@@ -344,9 +410,10 @@ export default function ApplicationPage() {
           </button>
           <button
             onClick={thisMonth}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+            aria-label="今月へ戻る"
+            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
           >
-            今月
+            {viewMonth + 1}月
           </button>
           <button
             onClick={nextMonth}
@@ -520,10 +587,10 @@ export default function ApplicationPage() {
                 <h3 className="text-sm font-bold text-ink">
                   あなたの希望（{myPreferences.length}件）
                 </h3>
-                {missingMovieCount > 0 && (
+                {incompleteMovieCount > 0 && (
                   <p className="text-[11px] text-danger inline-flex items-center gap-1">
                     <AlertIcon size={11} />
-                    映画未入力 {missingMovieCount}件
+                    必須項目未入力 {incompleteMovieCount}件
                   </p>
                 )}
               </div>
@@ -552,6 +619,41 @@ export default function ApplicationPage() {
                     />
                   )
                 })}
+              </div>
+
+              <div
+                className={`rounded-xl border px-4 py-3 space-y-3 ${
+                  submitted
+                    ? 'bg-success-bg/40 border-success/30'
+                    : 'bg-accent/10 border-accent/30'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {submitted ? (
+                    <CheckIcon size={16} className="mt-0.5 text-success shrink-0" />
+                  ) : (
+                    <AlertIcon size={16} className="mt-0.5 text-accent shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold ${submitted ? 'text-success' : 'text-ink'}`}>
+                      {submitted ? '提出済みです' : 'まだ下書きです'}
+                    </p>
+                    <p className="text-[11px] text-ink-muted mt-0.5">
+                      {submitted
+                        ? '希望日や順位を変更すると未提出に戻ります。'
+                        : 'この内容で確定する場合は、締切前に提出してください。未提出の希望は集計されません。'}
+                    </p>
+                  </div>
+                </div>
+                {!submitted && (
+                  <button
+                    onClick={submitPreferences}
+                    disabled={!canEdit || submittingPreferences || incompleteMovieCount > 0}
+                    className="w-full px-4 py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {submittingPreferences ? '提出中...' : 'この希望を提出する'}
+                  </button>
+                )}
               </div>
             </section>
           ) : (

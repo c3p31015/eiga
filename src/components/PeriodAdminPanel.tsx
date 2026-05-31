@@ -10,10 +10,21 @@ import {
 } from '../lib/activity'
 import { ChevronLeftIcon, ChevronRightIcon } from './icons'
 
-export default function PeriodAdminPanel() {
-  const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+type PeriodAdminPanelProps = {
+  year: number
+  month: number
+  onPrevMonth: () => void
+  onNextMonth: () => void
+  onThisMonth: () => void
+}
+
+export default function PeriodAdminPanel({
+  year,
+  month,
+  onPrevMonth,
+  onNextMonth,
+  onThisMonth,
+}: PeriodAdminPanelProps) {
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [deadlineInput, setDeadlineInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -64,7 +75,7 @@ export default function PeriodAdminPanel() {
   }, [year, month])
 
   useEffect(() => {
-    fetchPeriod()
+    void Promise.resolve().then(fetchPeriod)
   }, [fetchPeriod])
 
   const saveDeadline = async () => {
@@ -140,7 +151,7 @@ export default function PeriodAdminPanel() {
       return
     }
     setLocking(true)
-    const { error: rpcError } = await supabase.rpc('lock_activity_period', {
+    const { error: rpcError } = await supabase.rpc('lock_activity_period_now', {
       p_period_id: period.id,
     })
     setLocking(false)
@@ -150,32 +161,6 @@ export default function PeriodAdminPanel() {
     }
     flash('集計を実行しました')
     fetchPeriod()
-  }
-
-  const goPrev = () => {
-    let y = year
-    let m = month - 1
-    if (m < 1) {
-      m = 12
-      y -= 1
-    }
-    setYear(y)
-    setMonth(m)
-  }
-  const goNext = () => {
-    let y = year
-    let m = month + 1
-    if (m > 12) {
-      m = 1
-      y += 1
-    }
-    setYear(y)
-    setMonth(m)
-  }
-  const goThisMonth = () => {
-    const now = new Date()
-    setYear(now.getFullYear())
-    setMonth(now.getMonth() + 1)
   }
 
   const status = period
@@ -200,20 +185,21 @@ export default function PeriodAdminPanel() {
         <h3 className="text-lg font-bold text-ink">月別期間設定</h3>
         <div className="flex items-center gap-1">
           <button
-            onClick={goPrev}
+            onClick={onPrevMonth}
             aria-label="前月"
             className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >
             <ChevronLeftIcon />
           </button>
           <button
-            onClick={goThisMonth}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+            onClick={onThisMonth}
+            aria-label="今月へ戻る"
+            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
           >
-            今月
+            {month}月
           </button>
           <button
-            onClick={goNext}
+            onClick={onNextMonth}
             aria-label="翌月"
             className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >
@@ -281,14 +267,10 @@ export default function PeriodAdminPanel() {
             ) : (
               <button
                 onClick={runLock}
-                disabled={locking || isPeriodOpen(period)}
+                disabled={locking}
                 className="w-full px-4 py-2.5 bg-danger/15 text-danger text-sm font-semibold rounded-lg hover:bg-danger/25 disabled:opacity-40 disabled:cursor-not-allowed border border-danger/30 transition-colors"
               >
-                {locking
-                  ? '集計中...'
-                  : isPeriodOpen(period)
-                    ? '締切前のため集計不可'
-                    : '今すぐ集計を実行'}
+                {locking ? '集計中...' : '今すぐ集計を実行'}
               </button>
             )}
           </>

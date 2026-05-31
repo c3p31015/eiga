@@ -47,12 +47,14 @@ export type DatePreference = {
   user_id: string
   date: string
   rank: number
+  submitted_at: string | null
   movie_title: string | null
   movie_start_time: string | null
   movie_duration_minutes: number | null
   movie_genre: string | null
   movie_watch_url: string | null
   movie_description: string | null
+  movie_has_gore: boolean
   profiles?: { display_name: string } | null
 }
 
@@ -67,9 +69,48 @@ export type ActivityAssignment = {
   movie_poster_url: string | null
   movie_watch_url: string | null
   movie_start_time: string | null
+  movie_has_gore: boolean
   locked_at: string
   movie_updated_at: string | null
   profiles?: { display_name: string } | null
+}
+
+const VIEW_MONTH_STORAGE_KEY = 'activity-view-month'
+
+export function getStoredViewMonth(fallback: Date = new Date()): { year: number; month: number } {
+  const fallbackMonth = { year: fallback.getFullYear(), month: fallback.getMonth() }
+  if (typeof window === 'undefined') return fallbackMonth
+
+  const savedMonth = window.sessionStorage.getItem(VIEW_MONTH_STORAGE_KEY)
+  if (!savedMonth) return fallbackMonth
+
+  try {
+    const parsed = JSON.parse(savedMonth) as { year?: unknown; month?: unknown }
+    const year = Number(parsed.year)
+    const oneBasedMonth = Number(parsed.month)
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(oneBasedMonth) &&
+      year >= 2000 &&
+      year <= 2100 &&
+      oneBasedMonth >= 1 &&
+      oneBasedMonth <= 12
+    ) {
+      return { year, month: oneBasedMonth - 1 }
+    }
+  } catch {
+    window.sessionStorage.removeItem(VIEW_MONTH_STORAGE_KEY)
+  }
+
+  return fallbackMonth
+}
+
+export function storeViewMonth(year: number, month: number): void {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(
+    VIEW_MONTH_STORAGE_KEY,
+    JSON.stringify({ year, month: month + 1 })
+  )
 }
 
 export function getIsoWeekday(date: Date): number {

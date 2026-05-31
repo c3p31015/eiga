@@ -1,6 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { getStoredViewMonth, storeViewMonth } from '../lib/activity'
 import { PlusIcon } from '../components/icons'
 import ActivityScheduleEditor from '../components/ActivityScheduleEditor'
 import PeriodAdminPanel from '../components/PeriodAdminPanel'
@@ -17,6 +18,10 @@ type Profile = {
 
 export default function AdminPage() {
   const { user } = useAuth()
+  const today = new Date()
+  const initialMonth = getStoredViewMonth(today)
+  const [viewYear, setViewYear] = useState(initialMonth.year)
+  const [viewMonth, setViewMonth] = useState(initialMonth.month)
   const [members, setMembers] = useState<Profile[]>([])
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -35,8 +40,39 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    fetchMembers()
+    void Promise.resolve().then(fetchMembers)
   }, [])
+
+  useEffect(() => {
+    storeViewMonth(viewYear, viewMonth)
+  }, [viewYear, viewMonth])
+
+  const goPrevMonth = () => {
+    const d = new Date(viewYear, viewMonth - 1, 1)
+    const nextYear = d.getFullYear()
+    const nextMonth = d.getMonth()
+    setViewYear(nextYear)
+    setViewMonth(nextMonth)
+    storeViewMonth(nextYear, nextMonth)
+  }
+
+  const goNextMonth = () => {
+    const d = new Date(viewYear, viewMonth + 1, 1)
+    const nextYear = d.getFullYear()
+    const nextMonth = d.getMonth()
+    setViewYear(nextYear)
+    setViewMonth(nextMonth)
+    storeViewMonth(nextYear, nextMonth)
+  }
+
+  const goThisMonth = () => {
+    const now = new Date()
+    const nextYear = now.getFullYear()
+    const nextMonth = now.getMonth()
+    setViewYear(nextYear)
+    setViewMonth(nextMonth)
+    storeViewMonth(nextYear, nextMonth)
+  }
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
@@ -186,11 +222,28 @@ export default function AdminPage() {
       </div>
       </section>
 
-      <ActivityScheduleEditor />
+      <ActivityScheduleEditor
+        viewYear={viewYear}
+        viewMonth={viewMonth}
+        onPrevMonth={goPrevMonth}
+        onNextMonth={goNextMonth}
+      />
 
-      <PeriodAdminPanel />
+      <PeriodAdminPanel
+        year={viewYear}
+        month={viewMonth + 1}
+        onPrevMonth={goPrevMonth}
+        onNextMonth={goNextMonth}
+        onThisMonth={goThisMonth}
+      />
 
-      <PreferenceListPanel />
+      <PreferenceListPanel
+        year={viewYear}
+        month={viewMonth + 1}
+        onPrevMonth={goPrevMonth}
+        onNextMonth={goNextMonth}
+        onThisMonth={goThisMonth}
+      />
     </div>
   )
 }

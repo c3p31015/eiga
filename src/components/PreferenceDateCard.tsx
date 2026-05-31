@@ -25,6 +25,7 @@ export type DateWishPayload = {
   genre: string
   watchUrl: string
   description: string
+  hasGore: boolean
 }
 
 type Props = {
@@ -64,19 +65,23 @@ export default function PreferenceDateCard({
   const [genre, setGenre] = useState(pref.movie_genre ?? '')
   const [watchUrl, setWatchUrl] = useState(pref.movie_watch_url ?? '')
   const [description, setDescription] = useState(pref.movie_description ?? '')
+  const [hasGore, setHasGore] = useState(pref.movie_has_gore ?? false)
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   // pref が外部更新されたらフォームも追従（ただしユーザー編集中は上書きしない）
   useEffect(() => {
-    setTitle(pref.movie_title ?? '')
-    setStartTime(pref.movie_start_time?.slice(0, 5) ?? '')
-    setDuration(pref.movie_duration_minutes != null ? String(pref.movie_duration_minutes) : '')
-    setGenre(pref.movie_genre ?? '')
-    setWatchUrl(pref.movie_watch_url ?? '')
-    setDescription(pref.movie_description ?? '')
-    setMessage(null)
+    void Promise.resolve().then(() => {
+      setTitle(pref.movie_title ?? '')
+      setStartTime(pref.movie_start_time?.slice(0, 5) ?? '')
+      setDuration(pref.movie_duration_minutes != null ? String(pref.movie_duration_minutes) : '')
+      setGenre(pref.movie_genre ?? '')
+      setWatchUrl(pref.movie_watch_url ?? '')
+      setDescription(pref.movie_description ?? '')
+      setHasGore(pref.movie_has_gore ?? false)
+      setMessage(null)
+    })
   }, [
     pref.id,
     pref.movie_title,
@@ -85,6 +90,7 @@ export default function PreferenceDateCard({
     pref.movie_genre,
     pref.movie_watch_url,
     pref.movie_description,
+    pref.movie_has_gore,
   ])
 
   const trimmedTitle = title.trim()
@@ -106,6 +112,18 @@ export default function PreferenceDateCard({
 
   const activityRangeLabel = formatTimeRange(activityStart, activityEnd)
   const computedEndLabel = endMin !== null ? minutesToTimeString(endMin) : null
+  const timeOptions = (() => {
+    if (activityStartMin === null || activityEndMin === null || activityEndMin < activityStartMin) {
+      return []
+    }
+    const options: string[] = []
+    const first = Math.ceil(activityStartMin / 5) * 5
+    const last = Math.floor(activityEndMin / 5) * 5
+    for (let min = first; min <= last; min += 5) {
+      options.push(minutesToTimeString(min))
+    }
+    return options
+  })()
 
   const currentTitle = pref.movie_title ?? ''
   const currentStart = pref.movie_start_time?.slice(0, 5) ?? ''
@@ -114,6 +132,7 @@ export default function PreferenceDateCard({
   const currentGenre = pref.movie_genre ?? ''
   const currentUrl = pref.movie_watch_url ?? ''
   const currentDescription = pref.movie_description ?? ''
+  const currentHasGore = pref.movie_has_gore ?? false
 
   const dirty =
     trimmedTitle !== currentTitle ||
@@ -121,7 +140,8 @@ export default function PreferenceDateCard({
     duration !== currentDuration ||
     genre.trim() !== currentGenre ||
     watchUrl.trim() !== currentUrl ||
-    description.trim() !== currentDescription
+    description.trim() !== currentDescription ||
+    hasGore !== currentHasGore
 
   const dt = new Date(pref.date + 'T00:00:00')
   const dateLabel = `${dt.getMonth() + 1}/${dt.getDate()}（${DAY_LABELS[dt.getDay()]}）`
@@ -160,6 +180,7 @@ export default function PreferenceDateCard({
       genre,
       watchUrl,
       description,
+      hasGore,
     })
     setSaving(false)
     if (err) {
@@ -264,15 +285,19 @@ export default function PreferenceDateCard({
                 <label className="block text-[11px] font-medium text-ink-muted mb-1">
                   開始時刻 <span className="text-accent">*</span>
                 </label>
-                <input
-                  type="time"
+                <select
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  disabled={disabled}
-                  min={activityStart ?? undefined}
-                  max={activityEnd ?? undefined}
+                  disabled={disabled || timeOptions.length === 0}
                   className="w-full px-3 py-2 bg-bg border border-line rounded-lg text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent disabled:opacity-50"
-                />
+                >
+                  <option value="">選択してください</option>
+                  {timeOptions.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-ink-muted mb-1">
@@ -296,6 +321,17 @@ export default function PreferenceDateCard({
                 {computedEndLabel && titleFilled && ` ／ 入力中の終了予定: ${computedEndLabel}`}
               </p>
             )}
+
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg px-3 py-2 cursor-pointer">
+              <span className="text-sm text-ink">グロい描写がある</span>
+              <input
+                type="checkbox"
+                checked={hasGore}
+                onChange={(e) => setHasGore(e.target.checked)}
+                disabled={disabled}
+                className="w-4 h-4 rounded border-line bg-bg text-accent focus:ring-accent/50 disabled:opacity-50"
+              />
+            </label>
 
             <div>
               <label className="block text-[11px] font-medium text-ink-muted mb-1">ジャンル</label>

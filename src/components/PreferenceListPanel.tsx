@@ -34,10 +34,21 @@ function formatTimeShort(t: string | null): string | null {
   return t.slice(0, 5)
 }
 
-export default function PreferenceListPanel() {
-  const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+type PreferenceListPanelProps = {
+  year: number
+  month: number
+  onPrevMonth: () => void
+  onNextMonth: () => void
+  onThisMonth: () => void
+}
+
+export default function PreferenceListPanel({
+  year,
+  month,
+  onPrevMonth,
+  onNextMonth,
+  onThisMonth,
+}: PreferenceListPanelProps) {
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [preferences, setPreferences] = useState<PreferenceWithProfile[]>([])
   const [view, setView] = useState<ViewMode>('date')
@@ -65,6 +76,7 @@ export default function PreferenceListPanel() {
         .from('date_preferences')
         .select('*, profiles(display_name, username)')
         .eq('period_id', periodId)
+        .not('submitted_at', 'is', null)
         .order('date', { ascending: true })
         .order('rank', { ascending: true }),
     ])
@@ -80,7 +92,7 @@ export default function PreferenceListPanel() {
   }, [year, month])
 
   useEffect(() => {
-    fetchData()
+    void Promise.resolve().then(fetchData)
   }, [fetchData])
 
   const handleDelete = useCallback(
@@ -111,32 +123,6 @@ export default function PreferenceListPanel() {
   )
 
   const periodLocked = !!period?.locked_at
-
-  const goPrev = () => {
-    let y = year
-    let m = month - 1
-    if (m < 1) {
-      m = 12
-      y -= 1
-    }
-    setYear(y)
-    setMonth(m)
-  }
-  const goNext = () => {
-    let y = year
-    let m = month + 1
-    if (m > 12) {
-      m = 1
-      y += 1
-    }
-    setYear(y)
-    setMonth(m)
-  }
-  const goThisMonth = () => {
-    const now = new Date()
-    setYear(now.getFullYear())
-    setMonth(now.getMonth() + 1)
-  }
 
   const byDate = useMemo(() => {
     const m = new Map<string, PreferenceWithProfile[]>()
@@ -181,20 +167,21 @@ export default function PreferenceListPanel() {
         <h3 className="text-lg font-bold text-ink">希望提出一覧</h3>
         <div className="flex items-center gap-1">
           <button
-            onClick={goPrev}
+            onClick={onPrevMonth}
             aria-label="前月"
             className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >
             <ChevronLeftIcon />
           </button>
           <button
-            onClick={goThisMonth}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+            onClick={onThisMonth}
+            aria-label="今月へ戻る"
+            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
           >
-            今月
+            {month}月
           </button>
           <button
-            onClick={goNext}
+            onClick={onNextMonth}
             aria-label="翌月"
             className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-card transition-colors"
           >

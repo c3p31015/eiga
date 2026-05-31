@@ -264,6 +264,11 @@ function AssignmentSection({
                     {assignment.movie_duration_minutes}分
                   </span>
                 )}
+                {assignment.movie_has_gore && (
+                  <span className="inline-flex items-center gap-0.5 text-danger">
+                    グロ描写あり
+                  </span>
+                )}
                 {assignment.movie_watch_url && (
                   <a
                     href={assignment.movie_watch_url}

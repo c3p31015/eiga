@@ -16,6 +16,8 @@ import {
   formatDeadline,
   isPeriodOpen,
   isPeriodPendingLock,
+  getStoredViewMonth,
+  storeViewMonth,
 } from '../lib/activity'
 
 const DAY_LABELS = ['月', '火', '水', '木', '金']
@@ -56,8 +58,9 @@ export default function CalendarPage() {
   const { user, profile } = useAuth()
   const isAdmin = !!profile?.is_admin
   const today = new Date()
-  const [viewYear, setViewYear] = useState(today.getFullYear())
-  const [viewMonth, setViewMonth] = useState(today.getMonth())
+  const initialMonth = getStoredViewMonth(today)
+  const [viewYear, setViewYear] = useState(initialMonth.year)
+  const [viewMonth, setViewMonth] = useState(initialMonth.month)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [activityRules, setActivityRules] = useState<ActivityRule[]>([])
@@ -161,8 +164,12 @@ export default function CalendarPage() {
   }, [viewYear, viewMonth, user])
 
   useEffect(() => {
-    fetchData()
+    void Promise.resolve().then(fetchData)
   }, [fetchData])
+
+  useEffect(() => {
+    storeViewMonth(viewYear, viewMonth)
+  }, [viewYear, viewMonth])
 
   // 締切過ぎ＆未集計の期間があれば自動でロック（ログイン時のみ）
   useEffect(() => {
@@ -271,9 +278,10 @@ export default function CalendarPage() {
           </button>
           <button
             onClick={thisMonth}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+            aria-label="今月へ戻る"
+            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
           >
-            今月
+            {viewMonth + 1}月
           </button>
           <button
             onClick={nextMonth}
@@ -306,7 +314,7 @@ export default function CalendarPage() {
           </div>
           {periodOpen && (
             <Link
-              to={user ? '/apply' : '/login'}
+              to={user ? `/apply?year=${viewYear}&month=${viewMonth + 1}` : '/login'}
               className="block text-center bg-accent text-bg text-sm font-semibold rounded-lg py-2.5 hover:bg-accent-strong transition-colors"
             >
               {user ? 'この月の活動申請をする →' : 'ログインして活動申請をする →'}
