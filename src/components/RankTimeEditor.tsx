@@ -149,7 +149,8 @@ export default function RankTimeEditor({
                 disabled={disabled}
                 aria-label="ドラッグして順位を入れ替え"
                 title="ドラッグして順位を入れ替え"
-                className="shrink-0 -ml-1 p-1 flex items-center justify-center text-ink-dim hover:text-ink-muted touch-none cursor-grab active:cursor-grabbing disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{ touchAction: 'none' }}
+                className="shrink-0 -ml-1 p-1 flex items-center justify-center text-ink-dim hover:text-ink-muted cursor-grab active:cursor-grabbing disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <GripIcon size={18} />
               </button>
