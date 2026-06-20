@@ -370,6 +370,7 @@ export default function ApplicationPage() {
             user_id: user.id,
             date: d,
             rank: i + 1,
+            movie_start_time: null,
             submitted_at: null,
           }
         })
