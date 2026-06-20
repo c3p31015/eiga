@@ -14,6 +14,7 @@
   --color-danger-bg: #3a1f1f;
   --color-success: #7ab87a;
   --color-success-bg: #1f2f1f;
+  --font-display: 'Shippori Mincho', ui-serif, Georgia, serif;
 }
 
 html,
@@ -21,4 +22,52 @@ body {
   background-color: var(--color-bg);
   color: var(--color-ink);
   color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 映画的な見出し書体 */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+/* キーボード操作時のフォーカスを全インタラクティブ要素で可視化 */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+}
+
+/* タップ遅延の抑制 */
+button,
+a,
+select,
+input,
+label,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* 希望日タップ時：順位バッジがすっと現れる */
+@keyframes badge-pop {
+  0% { opacity: 0 }
+  100% { opacity: 1 }
+}
+.animate-badge-pop {
+  animation: badge-pop 0.2s ease-out;
+}
+
+/* 動きを抑える設定を尊重 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

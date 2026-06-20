@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { CloseIcon, TrashIcon } from './icons'
 
@@ -101,6 +101,7 @@ export default function MemberRow({ member, isSelf, onChanged }: Props) {
 
           {message && (
             <div
+              aria-live="polite"
               className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg border ${
                 message.kind === 'ok'
                   ? 'bg-success-bg/60 border-success/30 text-success'
@@ -134,6 +135,9 @@ function RenameForm({
   setMessage: (m: { kind: 'ok' | 'err'; text: string } | null) => void
   onChanged: () => void | Promise<void>
 }) {
+  const fieldId = useId()
+  const displayNameId = `${fieldId}-display-name`
+  const isAdminId = `${fieldId}-is-admin`
   const [displayName, setDisplayName] = useState(member.display_name)
   const [isAdmin, setIsAdmin] = useState(member.is_admin)
   const [submitting, setSubmitting] = useState(false)
@@ -165,8 +169,11 @@ function RenameForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-2.5">
       <div>
-        <label className="block text-[11px] font-medium text-ink-muted mb-1">表示名</label>
+        <label htmlFor={displayNameId} className="block text-[11px] font-medium text-ink-muted mb-1">表示名</label>
         <input
+          id={displayNameId}
+          name="display_name"
+          autoComplete="name"
           type="text"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
@@ -174,8 +181,10 @@ function RenameForm({
           className="w-full px-3 py-2 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
         />
       </div>
-      <label className="flex items-center gap-2 cursor-pointer">
+      <label htmlFor={isAdminId} className="flex items-center gap-2 cursor-pointer">
         <input
+          id={isAdminId}
+          name="is_admin"
           type="checkbox"
           checked={isAdmin}
           onChange={(e) => setIsAdmin(e.target.checked)}
@@ -193,7 +202,7 @@ function RenameForm({
         disabled={submitting || !dirty}
         className="px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {submitting ? '保存中...' : '保存'}
+        {submitting ? '保存中…' : '保存'}
       </button>
     </form>
   )
@@ -206,6 +215,9 @@ function PasswordForm({
   member: Member
   setMessage: (m: { kind: 'ok' | 'err'; text: string } | null) => void
 }) {
+  const fieldId = useId()
+  const passwordId = `${fieldId}-password`
+  const confirmId = `${fieldId}-confirm`
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -245,8 +257,10 @@ function PasswordForm({
         既存セッションは即座には切れません。本人がログアウト→再ログインで反映されます。
       </p>
       <div>
-        <label className="block text-[11px] font-medium text-ink-muted mb-1">新しいパスワード</label>
+        <label htmlFor={passwordId} className="block text-[11px] font-medium text-ink-muted mb-1">新しいパスワード</label>
         <input
+          id={passwordId}
+          name="new-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -258,8 +272,10 @@ function PasswordForm({
         />
       </div>
       <div>
-        <label className="block text-[11px] font-medium text-ink-muted mb-1">確認用</label>
+        <label htmlFor={confirmId} className="block text-[11px] font-medium text-ink-muted mb-1">確認用</label>
         <input
+          id={confirmId}
+          name="confirm-password"
           type="password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
@@ -273,7 +289,7 @@ function PasswordForm({
         disabled={submitting}
         className="px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {submitting ? '変更中...' : 'パスワードを変更'}
+        {submitting ? '変更中…' : 'パスワードを変更'}
       </button>
     </form>
   )
@@ -334,7 +350,7 @@ function DeleteSection({
         className="inline-flex items-center gap-1.5 px-4 py-2 bg-danger text-bg text-sm font-semibold rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <TrashIcon size={13} />
-        {submitting ? '削除中...' : 'このアカウントを完全に削除'}
+        {submitting ? '削除中…' : 'このアカウントを完全に削除'}
       </button>
     </div>
   )

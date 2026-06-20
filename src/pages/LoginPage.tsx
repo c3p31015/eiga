@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useId, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { FilmIcon } from '../components/icons'
@@ -9,11 +9,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const usernameId = useId()
+  const passwordId = useId()
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-bg">
-        <div className="text-ink-muted">読み込み中...</div>
+        <div className="w-full max-w-sm space-y-2">
+          <div className="h-9 rounded-lg bg-card animate-pulse" />
+          <div className="h-9 rounded-lg bg-card animate-pulse" />
+        </div>
       </div>
     )
   }
@@ -48,38 +53,42 @@ export default function LoginPage() {
           <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center text-accent mb-3">
             <FilmIcon size={28} />
           </div>
-          <h1 className="text-xl font-bold text-ink tracking-wide">映画鑑賞サークル</h1>
+          <h1 className="text-xl font-bold text-ink tracking-wide font-display">映画鑑賞サークル</h1>
           <p className="text-xs text-ink-muted mt-1">ログインして投票に参加</p>
         </div>
 
         <div className="bg-card rounded-2xl border border-line p-6 shadow-xl shadow-black/30">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="username" className="block text-xs font-medium text-ink-muted mb-1.5">
+              <label htmlFor={usernameId} className="block text-xs font-medium text-ink-muted mb-1.5">
                 ユーザーID
               </label>
               <input
-                id="username"
+                id={usernameId}
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                name="username"
                 autoComplete="username"
+                spellCheck={false}
+                autoCapitalize="none"
                 className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
                 placeholder="ユーザーIDを入力"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs font-medium text-ink-muted mb-1.5">
+              <label htmlFor={passwordId} className="block text-xs font-medium text-ink-muted mb-1.5">
                 パスワード
               </label>
               <input
-                id="password"
+                id={passwordId}
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                name="password"
                 autoComplete="current-password"
                 className="w-full px-3 py-2.5 bg-bg border border-line rounded-lg text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
                 placeholder="パスワードを入力"
@@ -87,7 +96,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+              <p aria-live="polite" className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
                 {error}
               </p>
             )}
@@ -97,7 +106,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-50 transition-colors"
             >
-              {submitting ? 'ログイン中...' : 'ログイン'}
+              {submitting ? 'ログイン中…' : 'ログイン'}
             </button>
           </form>
         </div>

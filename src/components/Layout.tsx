@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, useId, useRef, type FormEvent } from 'react'
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -18,12 +18,42 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-bg text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-bg focus:text-sm focus:font-semibold"
+      >
+        本文へスキップ
+      </a>
       <header className="sticky top-0 z-20 bg-bg/90 backdrop-blur border-b border-line">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-base font-bold tracking-wide">
-            <span className="text-accent">●</span>{' '}
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <h1 className="text-base font-bold tracking-wide font-display shrink-0">
+            <span className="text-accent" aria-hidden="true">
+              ●
+            </span>{' '}
             <span className="text-ink">映画鑑賞サークル</span>
           </h1>
+
+          {/* デスクトップ用ナビ */}
+          <nav className="hidden md:flex items-center gap-1" aria-label="メインナビゲーション">
+            {navItems.map(({ to, label, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  `inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                    isActive
+                      ? 'text-accent bg-accent/10'
+                      : 'text-ink-muted hover:text-ink hover:bg-card'
+                  }`
+                }
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-3">
             {user ? (
               <>
@@ -56,15 +86,20 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 pt-5 pb-28">
+      <main id="main" className="max-w-3xl mx-auto px-4 pt-5 pb-28 md:pb-12">
         <Outlet />
       </main>
 
+      {/* モバイル用ボトムナビ */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-20 bg-card/95 backdrop-blur border-t border-line"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-card/95 backdrop-blur border-t border-line"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-label="メインナビゲーション"
       >
-        <div className="max-w-3xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
+        <div
+          className="max-w-3xl mx-auto grid"
+          style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}
+        >
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -95,6 +130,24 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
   const [confirm, setConfirm] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const pwId = useId()
+  const confirmId = useId()
+  const titleId = useId()
+  const firstFieldRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    firstFieldRef.current?.focus()
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [onClose])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -121,11 +174,23 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 px-4 py-6 flex items-center justify-center">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-card p-5 space-y-4 shadow-xl">
+    <div
+      className="fixed inset-0 z-50 bg-black/55 px-4 py-6 flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl border border-line bg-card p-5 space-y-4 shadow-xl"
+        style={{ overscrollBehavior: 'contain' }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-ink">パスワード変更</h2>
+            <h2 id={titleId} className="text-lg font-bold text-ink font-display">
+              パスワード変更
+            </h2>
             <p className="text-xs text-ink-muted mt-1">
               次回ログインから新しいパスワードを使います。
             </p>
@@ -140,11 +205,14 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <label htmlFor={pwId} className="block text-xs font-medium text-ink-muted mb-1.5">
               新しいパスワード
             </label>
             <input
+              id={pwId}
+              ref={firstFieldRef}
               type="password"
+              name="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -155,11 +223,13 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-ink-muted mb-1.5">
+            <label htmlFor={confirmId} className="block text-xs font-medium text-ink-muted mb-1.5">
               確認用
             </label>
             <input
+              id={confirmId}
               type="password"
+              name="confirm-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
@@ -171,6 +241,7 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
 
           {message && (
             <p
+              aria-live="polite"
               className={`text-sm rounded-lg border px-3 py-2 ${
                 message.kind === 'ok'
                   ? 'text-success bg-success-bg/60 border-success/30'
@@ -186,7 +257,7 @@ function PasswordChangeModal({ onClose }: { onClose: () => void }) {
             disabled={submitting}
             className="w-full px-4 py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {submitting ? '変更中...' : 'パスワードを変更'}
+            {submitting ? '変更中…' : 'パスワードを変更'}
           </button>
         </form>
       </div>

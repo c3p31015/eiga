@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useId } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   type ActivityRule,
@@ -144,15 +144,15 @@ export default function ActivityScheduleEditor({
 
   return (
     <section className="space-y-5">
-      <h3 className="text-lg font-bold text-ink">活動日・活動時間</h3>
+      <h3 className="text-lg font-bold text-ink font-display">活動日・活動時間</h3>
 
       {error && (
-        <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+        <p aria-live="polite" className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
           {error}
         </p>
       )}
       {success && (
-        <p className="text-sm text-success bg-success-bg/60 border border-success/30 rounded-lg px-3 py-2">
+        <p aria-live="polite" className="text-sm text-success bg-success-bg/60 border border-success/30 rounded-lg px-3 py-2">
           {success}
         </p>
       )}
@@ -202,7 +202,7 @@ export default function ActivityScheduleEditor({
         </div>
 
         {loading ? (
-          <p className="text-sm text-ink-muted">読み込み中...</p>
+          <div className="space-y-2"><div className="h-9 rounded-lg bg-card animate-pulse" /><div className="h-9 rounded-lg bg-card animate-pulse" /></div>
         ) : (
           <div className="space-y-1.5">
             <div className="grid grid-cols-5 gap-1.5">
@@ -316,6 +316,11 @@ type WeeklyRuleRowProps = {
 
 function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
   const [roomDraft, setRoomDraft] = useState(rule.room ?? '')
+  const baseId = useId()
+  const enabledId = `${baseId}-enabled`
+  const startId = `${baseId}-start`
+  const endId = `${baseId}-end`
+  const roomId = `${baseId}-room`
 
   useEffect(() => {
     void Promise.resolve().then(() => setRoomDraft(rule.room ?? ''))
@@ -328,8 +333,10 @@ function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
 
   return (
     <div className="py-1 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <label className="flex items-center gap-2 cursor-pointer shrink-0">
+      <label htmlFor={enabledId} className="flex items-center gap-2 cursor-pointer shrink-0">
         <input
+          id={enabledId}
+          name="enabled"
           type="checkbox"
           checked={rule.enabled}
           onChange={(e) => onUpdate({ enabled: e.target.checked })}
@@ -341,6 +348,9 @@ function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
       </label>
       <div className="flex items-center gap-2">
         <input
+          id={startId}
+          name="startTime"
+          aria-label="開始時刻"
           type="time"
           value={formatTime(rule.start_time) ?? ''}
           onChange={(e) => onUpdate({ start_time: e.target.value })}
@@ -349,6 +359,9 @@ function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
         />
         <span className="text-ink-dim text-sm">〜</span>
         <input
+          id={endId}
+          name="endTime"
+          aria-label="終了時刻"
           type="time"
           value={formatTime(rule.end_time) ?? ''}
           onChange={(e) => onUpdate({ end_time: e.target.value })}
@@ -357,6 +370,10 @@ function WeeklyRuleRow({ rule, onUpdate }: WeeklyRuleRowProps) {
         />
       </div>
       <input
+        id={roomId}
+        name="room"
+        aria-label="教室"
+        autoComplete="off"
         type="text"
         value={roomDraft}
         onChange={(e) => setRoomDraft(e.target.value)}
@@ -442,6 +459,18 @@ function DateOverridePanel({
   const [note, setNote] = useState(singleOverride?.note ?? '')
   const [saving, setSaving] = useState(false)
   const resetKey = dates.join(',')
+  const baseId = useId()
+  const modeDefaultId = `${baseId}-mode-default`
+  const modeActiveId = `${baseId}-mode-active`
+  const modeInactiveId = `${baseId}-mode-inactive`
+  const timeRuleId = `${baseId}-time-rule`
+  const timeCustomId = `${baseId}-time-custom`
+  const customStartId = `${baseId}-custom-start`
+  const customEndId = `${baseId}-custom-end`
+  const roomRuleId = `${baseId}-room-rule`
+  const roomCustomId = `${baseId}-room-custom`
+  const roomInputId = `${baseId}-room-input`
+  const noteId = `${baseId}-note`
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -517,8 +546,8 @@ function DateOverridePanel({
     <div className="bg-bg border border-accent/40 rounded-xl p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-ink">{headingLabel}を編集</p>
-          <p className="text-xs text-ink-muted mt-0.5 break-words">
+          <p className="font-semibold text-ink tabular-nums">{headingLabel}を編集</p>
+          <p className="text-xs text-ink-muted mt-0.5 break-words tabular-nums">
             {previewDates}{moreCount > 0 && ` ほか${moreCount}件`}
           </p>
         </div>
@@ -531,8 +560,9 @@ function DateOverridePanel({
       </div>
 
       <div className="space-y-2">
-        <label className="flex items-start gap-2 cursor-pointer">
+        <label htmlFor={modeDefaultId} className="flex items-start gap-2 cursor-pointer">
           <input
+            id={modeDefaultId}
             type="radio"
             name="mode"
             checked={mode === 'default'}
@@ -544,8 +574,9 @@ function DateOverridePanel({
             <span className="text-ink-muted text-xs ml-1">（個別設定を削除）</span>
           </span>
         </label>
-        <label className="flex items-start gap-2 cursor-pointer">
+        <label htmlFor={modeActiveId} className="flex items-start gap-2 cursor-pointer">
           <input
+            id={modeActiveId}
             type="radio"
             name="mode"
             checked={mode === 'active'}
@@ -554,8 +585,9 @@ function DateOverridePanel({
           />
           <span className="text-sm text-ink">活動日にする</span>
         </label>
-        <label className="flex items-start gap-2 cursor-pointer">
+        <label htmlFor={modeInactiveId} className="flex items-start gap-2 cursor-pointer">
           <input
+            id={modeInactiveId}
             type="radio"
             name="mode"
             checked={mode === 'inactive'}
@@ -569,8 +601,9 @@ function DateOverridePanel({
       {mode === 'active' && (
         <div className="space-y-2 pl-6">
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={timeRuleId} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={timeRuleId}
                 type="radio"
                 name="timeMode"
                 checked={timeMode === 'rule'}
@@ -581,8 +614,9 @@ function DateOverridePanel({
                 曜日ルールの時間を使う
               </span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={timeCustomId} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={timeCustomId}
                 type="radio"
                 name="timeMode"
                 checked={timeMode === 'custom'}
@@ -595,6 +629,9 @@ function DateOverridePanel({
           {timeMode === 'custom' && (
             <div className="flex items-center gap-2 pl-6">
               <input
+                id={customStartId}
+                name="customStartTime"
+                aria-label="開始時刻"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -602,6 +639,9 @@ function DateOverridePanel({
               />
               <span className="text-ink-dim">〜</span>
               <input
+                id={customEndId}
+                name="customEndTime"
+                aria-label="終了時刻"
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -611,8 +651,9 @@ function DateOverridePanel({
           )}
 
           <div className="space-y-1.5 pt-1">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={roomRuleId} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={roomRuleId}
                 type="radio"
                 name="roomMode"
                 checked={roomMode === 'rule'}
@@ -626,8 +667,9 @@ function DateOverridePanel({
                 )}
               </span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={roomCustomId} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={roomCustomId}
                 type="radio"
                 name="roomMode"
                 checked={roomMode === 'custom'}
@@ -639,6 +681,10 @@ function DateOverridePanel({
           </div>
           {roomMode === 'custom' && (
             <input
+              id={roomInputId}
+              name="customRoom"
+              aria-label="教室"
+              autoComplete="off"
               type="text"
               value={room}
               onChange={(e) => setRoom(e.target.value)}
@@ -649,6 +695,10 @@ function DateOverridePanel({
 
           {!isBatch && (
             <input
+              id={noteId}
+              name="note"
+              aria-label="メモ"
+              autoComplete="off"
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -662,9 +712,9 @@ function DateOverridePanel({
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full inline-flex items-center justify-center px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-50 transition-colors"
+        className="w-full inline-flex items-center justify-center px-4 py-2 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-50 transition-colors tabular-nums"
       >
-        {saving ? '保存中...' : `${dates.length}件に適用して保存`}
+        {saving ? '保存中…' : `${dates.length}件に適用して保存`}
       </button>
     </div>
   )

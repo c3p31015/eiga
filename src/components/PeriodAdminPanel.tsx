@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   type ActivityPeriod,
@@ -33,6 +33,8 @@ export default function PeriodAdminPanel({
   const [unlocking, setUnlocking] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const deadlineId = useId()
 
   const flash = (msg: string, isError = false) => {
     if (isError) {
@@ -182,7 +184,7 @@ export default function PeriodAdminPanel({
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-ink">月別期間設定</h3>
+        <h3 className="text-lg font-bold text-ink font-display">月別期間設定</h3>
         <div className="flex items-center gap-1">
           <button
             onClick={onPrevMonth}
@@ -194,7 +196,7 @@ export default function PeriodAdminPanel({
           <button
             onClick={onThisMonth}
             aria-label="今月へ戻る"
-            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors"
+            className="min-w-[6rem] px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-muted hover:text-ink hover:border-accent/40 transition-colors tabular-nums"
           >
             {month}月
           </button>
@@ -210,7 +212,7 @@ export default function PeriodAdminPanel({
 
       <div className="bg-card rounded-xl border border-line p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <p className="font-semibold text-ink">
+          <p className="font-semibold text-ink tabular-nums">
             {year}年{month}月
           </p>
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusClass}`}>
@@ -219,15 +221,17 @@ export default function PeriodAdminPanel({
         </div>
 
         {loading ? (
-          <p className="text-sm text-ink-muted">読み込み中...</p>
+          <p className="text-sm text-ink-muted">読み込み中…</p>
         ) : period ? (
           <>
             <div>
-              <label className="block text-xs font-medium text-ink-muted mb-1.5">
+              <label htmlFor={deadlineId} className="block text-xs font-medium text-ink-muted mb-1.5">
                 希望提出の締切（JST）
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id={deadlineId}
+                  name="deadline"
                   type="datetime-local"
                   value={deadlineInput}
                   onChange={(e) => setDeadlineInput(e.target.value)}
@@ -238,7 +242,7 @@ export default function PeriodAdminPanel({
                   disabled={saving}
                   className="px-4 py-2.5 bg-accent text-bg text-sm font-semibold rounded-lg hover:bg-accent-strong disabled:opacity-50 transition-colors"
                 >
-                  {saving ? '保存中...' : '保存'}
+                  {saving ? '保存中…' : '保存'}
                 </button>
               </div>
               <p className="mt-1.5 text-[11px] text-ink-dim">
@@ -261,7 +265,7 @@ export default function PeriodAdminPanel({
                   disabled={unlocking}
                   className="w-full px-4 py-2.5 bg-danger/15 text-danger text-sm font-semibold rounded-lg hover:bg-danger/25 disabled:opacity-40 disabled:cursor-not-allowed border border-danger/30 transition-colors"
                 >
-                  {unlocking ? 'ロック解除中...' : 'ロック解除（主催者割り当てをクリア）'}
+                  {unlocking ? 'ロック解除中…' : 'ロック解除（主催者割り当てをクリア）'}
                 </button>
               </div>
             ) : (
@@ -270,7 +274,7 @@ export default function PeriodAdminPanel({
                 disabled={locking}
                 className="w-full px-4 py-2.5 bg-danger/15 text-danger text-sm font-semibold rounded-lg hover:bg-danger/25 disabled:opacity-40 disabled:cursor-not-allowed border border-danger/30 transition-colors"
               >
-                {locking ? '集計中...' : '今すぐ集計を実行'}
+                {locking ? '集計中…' : '今すぐ集計を実行'}
               </button>
             )}
           </>
@@ -279,12 +283,12 @@ export default function PeriodAdminPanel({
         )}
 
         {error && (
-          <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+          <p aria-live="polite" className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
         {success && (
-          <p className="text-sm text-success bg-success-bg/60 border border-success/30 rounded-lg px-3 py-2">
+          <p aria-live="polite" className="text-sm text-success bg-success-bg/60 border border-success/30 rounded-lg px-3 py-2">
             {success}
           </p>
         )}

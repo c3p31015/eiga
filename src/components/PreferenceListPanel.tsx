@@ -3,12 +3,11 @@ import { supabase } from '../lib/supabase'
 import {
   type ActivityPeriod,
   type DatePreference,
+  type MovieWish,
   rankLabel,
   formatDeadline,
 } from '../lib/activity'
 import {
-  AlertIcon,
-  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -18,7 +17,10 @@ import {
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
-type PreferenceWithProfile = DatePreference & {
+type PrefWithProfile = DatePreference & {
+  profiles?: { display_name: string; username: string } | null
+}
+type WishWithProfile = MovieWish & {
   profiles?: { display_name: string; username: string } | null
 }
 
@@ -50,7 +52,8 @@ export default function PreferenceListPanel({
   onThisMonth,
 }: PreferenceListPanelProps) {
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
-  const [preferences, setPreferences] = useState<PreferenceWithProfile[]>([])
+  const [preferences, setPreferences] = useState<PrefWithProfile[]>([])
+  const [movieWishes, setMovieWishes] = useState<WishWithProfile[]>([])
   const [view, setView] = useState<ViewMode>('date')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +73,7 @@ export default function PreferenceListPanel({
     }
     const periodId = idData as string
 
-    const [periodRes, prefRes] = await Promise.all([
+    const [periodRes, prefRes, wishRes] = await Promise.all([
       supabase.from('activity_periods').select('*').eq('id', periodId).single(),
       supabase
         .from('date_preferences')
@@ -78,6 +81,12 @@ export default function PreferenceListPanel({
         .eq('period_id', periodId)
         .not('submitted_at', 'is', null)
         .order('date', { ascending: true })
+        .order('rank', { ascending: true }),
+      supabase
+        .from('period_movie_wishes')
+        .select('*, profiles(display_name, username)')
+        .eq('period_id', periodId)
+        .not('submitted_at', 'is', null)
         .order('rank', { ascending: true }),
     ])
 
@@ -87,7 +96,8 @@ export default function PreferenceListPanel({
       return
     }
     setPeriod(periodRes.data as ActivityPeriod)
-    setPreferences((prefRes.data as unknown as PreferenceWithProfile[]) ?? [])
+    setPreferences((prefRes.data as unknown as PrefWithProfile[]) ?? [])
+    setMovieWishes((wishRes.data as unknown as WishWithProfile[]) ?? [])
     setLoading(false)
   }, [year, month])
 
@@ -96,13 +106,12 @@ export default function PreferenceListPanel({
   }, [fetchData])
 
   const handleDelete = useCallback(
-    async (pref: PreferenceWithProfile) => {
+    async (pref: PrefWithProfile) => {
       const memberLabel = pref.profiles?.display_name ?? '(不明)'
       const dateLabel = formatDateLabel(pref.date)
-      const movieNote = pref.movie_title ? `\n入力済みの映画情報「${pref.movie_title}」も削除されます。` : ''
       if (
         !confirm(
-          `${memberLabel} さんの ${dateLabel}（${rankLabel(pref.rank)}）を削除しますか？${movieNote}`
+          `${memberLabel} さんの ${dateLabel}（${rankLabel(pref.rank)}）を希望日から削除しますか？`
         )
       ) {
         return
@@ -124,8 +133,15 @@ export default function PreferenceListPanel({
 
   const periodLocked = !!period?.locked_at
 
+  // (user_id, rank) → 映画。日付の当選順位に対応する映画を引くのに使う。
+  const movieByUserRank = useMemo(() => {
+    const m = new Map<string, WishWithProfile>()
+    for (const w of movieWishes) m.set(`${w.user_id}:${w.rank}`, w)
+    return m
+  }, [movieWishes])
+
   const byDate = useMemo(() => {
-    const m = new Map<string, PreferenceWithProfile[]>()
+    const m = new Map<string, PrefWithProfile[]>()
     for (const p of preferences) {
       const list = m.get(p.date)
       if (list) list.push(p)
@@ -134,37 +150,48 @@ export default function PreferenceListPanel({
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [preferences])
 
+  type MemberEntry = {
+    name: string
+    username: string
+    prefs: PrefWithProfile[]
+    wishes: WishWithProfile[]
+  }
+
   const byMember = useMemo(() => {
-    const m = new Map<
-      string,
-      { name: string; username: string; prefs: PreferenceWithProfile[] }
-    >()
-    for (const p of preferences) {
-      const entry = m.get(p.user_id)
-      if (entry) {
-        entry.prefs.push(p)
-      } else {
-        m.set(p.user_id, {
-          name: p.profiles?.display_name ?? '(不明)',
-          username: p.profiles?.username ?? '',
-          prefs: [p],
-        })
+    const m = new Map<string, MemberEntry>()
+    const ensure = (
+      userId: string,
+      profile?: { display_name: string; username: string } | null
+    ): MemberEntry => {
+      let entry = m.get(userId)
+      if (!entry) {
+        entry = {
+          name: profile?.display_name ?? '(不明)',
+          username: profile?.username ?? '',
+          prefs: [],
+          wishes: [],
+        }
+        m.set(userId, entry)
       }
+      return entry
     }
+    for (const p of preferences) ensure(p.user_id, p.profiles).prefs.push(p)
+    for (const w of movieWishes) ensure(w.user_id, w.profiles).wishes.push(w)
     for (const entry of m.values()) {
       entry.prefs.sort((a, b) => a.rank - b.rank)
+      entry.wishes.sort((a, b) => a.rank - b.rank)
     }
     return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'))
-  }, [preferences])
+  }, [preferences, movieWishes])
 
   const memberCount = byMember.length
-  const totalCount = preferences.length
-  const filledMovieCount = preferences.filter((p) => !!p.movie_title).length
+  const dateTotal = preferences.length
+  const movieTotal = movieWishes.length
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-ink">希望提出一覧</h3>
+        <h3 className="text-lg font-bold text-ink font-display">希望提出一覧</h3>
         <div className="flex items-center gap-1">
           <button
             onClick={onPrevMonth}
@@ -206,18 +233,15 @@ export default function PreferenceListPanel({
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg bg-bg border border-line py-2">
             <p className="text-[10px] text-ink-muted">提出メンバー</p>
-            <p className="text-base font-bold text-ink">{memberCount}人</p>
+            <p className="text-base font-bold text-ink tabular-nums">{memberCount}人</p>
           </div>
           <div className="rounded-lg bg-bg border border-line py-2">
-            <p className="text-[10px] text-ink-muted">希望件数</p>
-            <p className="text-base font-bold text-ink">{totalCount}件</p>
+            <p className="text-[10px] text-ink-muted">希望日</p>
+            <p className="text-base font-bold text-ink tabular-nums">{dateTotal}件</p>
           </div>
           <div className="rounded-lg bg-bg border border-line py-2">
-            <p className="text-[10px] text-ink-muted">映画入力済</p>
-            <p className="text-base font-bold text-ink">
-              {filledMovieCount}
-              <span className="text-xs text-ink-muted">/{totalCount}</span>
-            </p>
+            <p className="text-[10px] text-ink-muted">映画</p>
+            <p className="text-base font-bold text-ink tabular-nums">{movieTotal}件</p>
           </div>
         </div>
 
@@ -225,9 +249,7 @@ export default function PreferenceListPanel({
           <button
             onClick={() => setView('date')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              view === 'date'
-                ? 'bg-accent text-bg'
-                : 'text-ink-muted hover:text-ink'
+              view === 'date' ? 'bg-accent text-bg' : 'text-ink-muted hover:text-ink'
             }`}
           >
             日付別
@@ -235,9 +257,7 @@ export default function PreferenceListPanel({
           <button
             onClick={() => setView('member')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              view === 'member'
-                ? 'bg-accent text-bg'
-                : 'text-ink-muted hover:text-ink'
+              view === 'member' ? 'bg-accent text-bg' : 'text-ink-muted hover:text-ink'
             }`}
           >
             メンバー別
@@ -245,14 +265,14 @@ export default function PreferenceListPanel({
         </div>
 
         {error && (
-          <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+          <p aria-live="polite" className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
 
         {loading ? (
-          <p className="text-sm text-ink-muted">読み込み中...</p>
-        ) : preferences.length === 0 ? (
+          <div className="space-y-2"><div className="h-9 rounded-lg bg-card animate-pulse" /><div className="h-9 rounded-lg bg-card animate-pulse" /></div>
+        ) : preferences.length === 0 && movieWishes.length === 0 ? (
           <p className="text-sm text-ink-muted text-center py-6">
             この月の希望提出はまだありません
           </p>
@@ -263,6 +283,7 @@ export default function PreferenceListPanel({
                 key={date}
                 date={date}
                 prefs={prefs}
+                movieByUserRank={movieByUserRank}
                 onDelete={periodLocked ? null : handleDelete}
                 deletingId={deletingId}
               />
@@ -273,9 +294,7 @@ export default function PreferenceListPanel({
             {byMember.map((m) => (
               <MemberGroup
                 key={m.username || m.name}
-                name={m.name}
-                username={m.username}
-                prefs={m.prefs}
+                entry={m}
                 onDelete={periodLocked ? null : handleDelete}
                 deletingId={deletingId}
               />
@@ -293,16 +312,39 @@ export default function PreferenceListPanel({
   )
 }
 
-type DeleteHandler = ((pref: PreferenceWithProfile) => void | Promise<void>) | null
+type DeleteHandler = ((pref: PrefWithProfile) => void | Promise<void>) | null
+
+function MovieLine({ wish }: { wish: WishWithProfile }) {
+  const start = formatTimeShort(wish.movie_start_time)
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-ink-muted">
+      <span className="inline-flex items-center gap-0.5 text-ink">
+        <FilmIcon size={11} className="text-accent" />
+        <span className="truncate">{wish.movie_title}</span>
+      </span>
+      {start && (
+        <span className="inline-flex items-center gap-0.5">
+          <ClockIcon size={11} />
+          {start}
+        </span>
+      )}
+      {wish.movie_duration_minutes != null && <span className="tabular-nums">{wish.movie_duration_minutes}分</span>}
+      {wish.movie_genre && <span>· {wish.movie_genre}</span>}
+      {wish.movie_has_gore && <span className="text-danger">· グロ描写あり</span>}
+    </div>
+  )
+}
 
 function DateGroup({
   date,
   prefs,
+  movieByUserRank,
   onDelete,
   deletingId,
 }: {
   date: string
-  prefs: PreferenceWithProfile[]
+  prefs: PrefWithProfile[]
+  movieByUserRank: Map<string, WishWithProfile>
   onDelete: DeleteHandler
   deletingId: string | null
 }) {
@@ -310,33 +352,59 @@ function DateGroup({
     <div className="rounded-lg border border-line bg-bg overflow-hidden">
       <div className="px-3 py-2 bg-card border-b border-line flex items-baseline justify-between">
         <p className="text-sm font-bold text-ink">{formatDateLabel(date)}</p>
-        <p className="text-[11px] text-ink-muted">{prefs.length}人が希望</p>
+        <p className="text-[11px] text-ink-muted tabular-nums">{prefs.length}人が希望</p>
       </div>
       <ul className="divide-y divide-line">
-        {prefs.map((p) => (
-          <PreferenceRow
-            key={p.id}
-            pref={p}
-            showName
-            onDelete={onDelete}
-            deleting={deletingId === p.id}
-          />
-        ))}
+        {prefs.map((p) => {
+          const pairedMovie = movieByUserRank.get(`${p.user_id}:${p.rank}`) ?? null
+          return (
+            <li key={p.id} className="px-3 py-2 flex items-start gap-2">
+              <span className="shrink-0 inline-flex items-center justify-center min-w-[2.75rem] px-1.5 h-6 rounded bg-accent/15 text-accent text-[11px] font-bold">
+                {rankLabel(p.rank)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-ink truncate">
+                  {p.profiles?.display_name ?? '(不明)'}
+                </p>
+                {pairedMovie ? (
+                  <div className="mt-0.5">
+                    <p className="text-[10px] text-ink-dim">当選時の上映作品（同順位）</p>
+                    <MovieLine wish={pairedMovie} />
+                  </div>
+                ) : (
+                  <p className="mt-0.5 text-[11px] text-ink-dim">同順位の映画は未登録</p>
+                )}
+              </div>
+              {onDelete && (
+                <button
+                  onClick={() => onDelete(p)}
+                  disabled={deletingId === p.id}
+                  aria-label="この希望日を削除"
+                  title="この希望日を削除"
+                  className="shrink-0 p-1.5 rounded-md text-ink-muted hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <TrashIcon size={14} />
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
 }
 
 function MemberGroup({
-  name,
-  username,
-  prefs,
+  entry,
   onDelete,
   deletingId,
 }: {
-  name: string
-  username: string
-  prefs: PreferenceWithProfile[]
+  entry: {
+    name: string
+    username: string
+    prefs: PrefWithProfile[]
+    wishes: WishWithProfile[]
+  }
   onDelete: DeleteHandler
   deletingId: string | null
 }) {
@@ -344,100 +412,68 @@ function MemberGroup({
     <div className="rounded-lg border border-line bg-bg overflow-hidden">
       <div className="px-3 py-2 bg-card border-b border-line flex items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-bold text-ink truncate">{name}</p>
-          {username && (
-            <p className="text-[11px] text-ink-muted truncate">@{username}</p>
-          )}
+          <p className="text-sm font-bold text-ink truncate">{entry.name}</p>
+          {entry.username && <p className="text-[11px] text-ink-muted truncate">@{entry.username}</p>}
         </div>
-        <p className="text-[11px] text-ink-muted shrink-0">{prefs.length}件</p>
+        <p className="text-[11px] text-ink-muted shrink-0 tabular-nums">
+          希望日{entry.prefs.length}・映画{entry.wishes.length}
+        </p>
       </div>
-      <ul className="divide-y divide-line">
-        {prefs.map((p) => (
-          <PreferenceRow
-            key={p.id}
-            pref={p}
-            showDate
-            onDelete={onDelete}
-            deleting={deletingId === p.id}
-          />
-        ))}
-      </ul>
-    </div>
-  )
-}
 
-function PreferenceRow({
-  pref,
-  showName = false,
-  showDate = false,
-  onDelete,
-  deleting,
-}: {
-  pref: PreferenceWithProfile
-  showName?: boolean
-  showDate?: boolean
-  onDelete: DeleteHandler
-  deleting: boolean
-}) {
-  const start = formatTimeShort(pref.movie_start_time)
-  const filled = !!pref.movie_title
-  return (
-    <li className="px-3 py-2 flex items-start gap-2">
-      <span className="shrink-0 inline-flex items-center justify-center min-w-[2.75rem] px-1.5 h-6 rounded bg-accent/15 text-accent text-[11px] font-bold">
-        {rankLabel(pref.rank)}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          {showName && (
-            <p className="text-sm font-semibold text-ink truncate">
-              {pref.profiles?.display_name ?? '(不明)'}
-            </p>
-          )}
-          {showDate && (
-            <p className="text-sm font-semibold text-ink">{formatDateLabel(pref.date)}</p>
-          )}
-          {filled ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-success">
-              <CheckIcon size={11} />
-              映画入力済
-            </span>
+      <div className="px-3 py-2 space-y-2">
+        <div>
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider mb-1">
+            希望日
+          </p>
+          {entry.prefs.length === 0 ? (
+            <p className="text-[11px] text-ink-dim">なし</p>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[11px] text-danger">
-              <AlertIcon size={11} />
-              映画未入力
-            </span>
+            <ul className="space-y-1">
+              {entry.prefs.map((p) => (
+                <li key={p.id} className="flex items-center gap-2">
+                  <span className="shrink-0 inline-flex items-center justify-center min-w-[2.75rem] px-1.5 h-5 rounded bg-accent/15 text-accent text-[10px] font-bold">
+                    {rankLabel(p.rank)}
+                  </span>
+                  <span className="text-sm text-ink">{formatDateLabel(p.date)}</span>
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(p)}
+                      disabled={deletingId === p.id}
+                      aria-label="この希望日を削除"
+                      title="この希望日を削除"
+                      className="ml-auto shrink-0 p-1 rounded-md text-ink-muted hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <TrashIcon size={13} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-        {filled && (
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-ink-muted">
-            <span className="inline-flex items-center gap-0.5 text-ink">
-              <FilmIcon size={11} className="text-accent" />
-              <span className="truncate">{pref.movie_title}</span>
-            </span>
-            {start && (
-              <span className="inline-flex items-center gap-0.5">
-                <ClockIcon size={11} />
-                {start}
-              </span>
-            )}
-            {pref.movie_duration_minutes != null && (
-              <span>{pref.movie_duration_minutes}分</span>
-            )}
-            {pref.movie_genre && <span>· {pref.movie_genre}</span>}
-          </div>
-        )}
+
+        <div>
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider mb-1">
+            観たい映画
+          </p>
+          {entry.wishes.length === 0 ? (
+            <p className="text-[11px] text-ink-dim">なし</p>
+          ) : (
+            <ul className="space-y-1">
+              {entry.wishes.map((w) => (
+                <li key={w.id} className="flex items-start gap-2">
+                  <span className="shrink-0 inline-flex items-center justify-center min-w-[2.75rem] px-1.5 h-5 rounded bg-accent/15 text-accent text-[10px] font-bold">
+                    {rankLabel(w.rank)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <MovieLine wish={w} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-      {onDelete && (
-        <button
-          onClick={() => onDelete(pref)}
-          disabled={deleting}
-          aria-label="この希望を削除"
-          title="この希望を削除"
-          className="shrink-0 p-1.5 rounded-md text-ink-muted hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          <TrashIcon size={14} />
-        </button>
-      )}
-    </li>
+    </div>
   )
 }

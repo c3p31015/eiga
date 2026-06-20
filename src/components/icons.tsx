@@ -13,6 +13,8 @@ const base = (size: number, className?: string) => ({
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
   className,
+  'aria-hidden': true,
+  focusable: false,
 })
 
 export function CalendarIcon({ size = 22, className }: IconProps) {
@@ -125,6 +127,19 @@ export function ChevronUpIcon({ size = 18, className }: IconProps) {
   return (
     <svg {...base(size, className)}>
       <path d="M18 15l-6-6-6 6" />
+    </svg>
+  )
+}
+
+export function GripIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...base(size, className)} fill="currentColor" stroke="none">
+      <circle cx="9" cy="6" r="1.4" />
+      <circle cx="15" cy="6" r="1.4" />
+      <circle cx="9" cy="12" r="1.4" />
+      <circle cx="15" cy="12" r="1.4" />
+      <circle cx="9" cy="18" r="1.4" />
+      <circle cx="15" cy="18" r="1.4" />
     </svg>
   )
 }

@@ -253,7 +253,7 @@ export default function CalendarPage() {
           <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">
             活動日確認
           </p>
-          <h2 className="text-xl font-bold text-ink">
+          <h2 className="text-xl font-bold text-ink font-display tabular-nums">
             {viewYear}年{viewMonth + 1}月
           </h2>
         </div>
@@ -313,7 +313,20 @@ export default function CalendarPage() {
       )}
 
       {loading ? (
-        <p className="text-ink-muted text-sm">読み込み中...</p>
+        <div className="space-y-1.5" aria-hidden="true">
+          <div className="grid grid-cols-5 gap-1.5">
+            {DAY_LABELS.map((label) => (
+              <div key={label} className="h-7 rounded bg-card animate-pulse" />
+            ))}
+          </div>
+          {Array.from({ length: 4 }).map((_, wi) => (
+            <div key={wi} className="grid grid-cols-5 gap-1.5">
+              {Array.from({ length: 5 }).map((_, di) => (
+                <div key={di} className="aspect-square rounded-lg bg-card animate-pulse" />
+              ))}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-1.5">
           <div className="grid grid-cols-5 gap-1.5">
@@ -363,12 +376,21 @@ export default function CalendarPage() {
                   subClass = 'text-ink-dim'
                 }
 
+                const cellLabel = `${date.getMonth() + 1}月${date.getDate()}日${
+                  isActivity
+                    ? isConfirmedActivity
+                      ? `・活動確定${assignment?.movie_title ? `・${assignment.movie_title}` : ''}`
+                      : '・活動可能日'
+                    : '・休み'
+                }`
+
                 return (
                   <button
                     key={di}
                     onClick={() => isActivity && setSelectedDate(dateStr)}
                     disabled={!isActivity}
-                    className={`relative aspect-square rounded-lg border p-1.5 flex flex-col items-center justify-between text-center transition-all ${
+                    aria-label={cellLabel}
+                    className={`relative aspect-square rounded-lg border p-1.5 flex flex-col items-center justify-between text-center transition-colors ${
                       isActivity ? 'active:scale-95' : ''
                     } ${cellClass}`}
                   >

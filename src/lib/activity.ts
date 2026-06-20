@@ -47,14 +47,25 @@ export type DatePreference = {
   user_id: string
   date: string
   rank: number
+  movie_start_time: string | null
   submitted_at: string | null
-  movie_title: string | null
+  profiles?: { display_name: string } | null
+}
+
+// 観たい映画の希望（日付とは独立した順位付き）
+export type MovieWish = {
+  id: string
+  period_id: string
+  user_id: string
+  rank: number
+  movie_title: string
   movie_start_time: string | null
   movie_duration_minutes: number | null
   movie_genre: string | null
   movie_watch_url: string | null
   movie_description: string | null
   movie_has_gore: boolean
+  submitted_at: string | null
   profiles?: { display_name: string } | null
 }
 

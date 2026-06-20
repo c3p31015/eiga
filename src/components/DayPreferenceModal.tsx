@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   CloseIcon,
   CheckIcon,
@@ -64,6 +64,7 @@ export default function DayPreferenceModal({
 }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [attendanceBusy, setAttendanceBusy] = useState<AttendanceStatus | 'clear' | null>(null)
+  const titleId = useId()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -97,10 +98,17 @@ export default function DayPreferenceModal({
 
   return (
     <div className="fixed inset-0 z-30 flex items-stretch justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-3xl bg-bg flex flex-col shadow-2xl sm:my-8 sm:rounded-2xl sm:max-h-[calc(100vh-4rem)] sm:border sm:border-line">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-3xl bg-bg flex flex-col shadow-2xl sm:my-8 sm:rounded-2xl sm:max-h-[calc(100vh-4rem)] sm:border sm:border-line"
+      >
         <div className="sticky top-0 flex items-center justify-between px-5 py-4 border-b border-line bg-bg">
           <div className="min-w-0">
-            <h3 className="text-lg font-bold text-ink">{heading}</h3>
+            <h3 id={titleId} className="text-lg font-bold text-ink font-display">
+              {heading}
+            </h3>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
               {timeLabel && (
                 <p className="inline-flex items-center gap-1 text-xs font-medium text-accent">
@@ -127,10 +135,16 @@ export default function DayPreferenceModal({
 
         <div
           className="flex-1 overflow-y-auto px-5 py-4 space-y-3"
-          style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+          style={{
+            paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+            overscrollBehavior: 'contain',
+          }}
         >
           {error && (
-            <p className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2">
+            <p
+              aria-live="polite"
+              className="text-sm text-danger bg-danger-bg/60 border border-danger/30 rounded-lg px-3 py-2"
+            >
               {error}
             </p>
           )}
@@ -218,8 +232,11 @@ function AssignmentSection({
             {assignment.movie_poster_url && (
               <img
                 src={assignment.movie_poster_url}
-                alt={assignment.movie_title}
-                className="w-full max-h-80 object-contain bg-black/20"
+                alt={`${assignment.movie_title} のポスター`}
+                width={1200}
+                height={675}
+                loading="lazy"
+                className="w-full h-auto max-h-80 object-contain bg-black/20"
                 onError={(e) => {
                   ;(e.target as HTMLImageElement).style.display = 'none'
                 }}

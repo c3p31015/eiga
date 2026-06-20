@@ -98,6 +98,28 @@ create table public.date_preferences (
 create index date_preferences_period_date_idx
   on public.date_preferences(period_id, date);
 
+-- 7b. period_movie_wishes テーブル: 観たい映画の希望順位（日付とは独立）
+-- 集計時は「希望日・第N希望」当選者の「映画・第N希望」を割り当てる（022_separate_movie_wishes.sql）
+create table public.period_movie_wishes (
+  id uuid primary key default gen_random_uuid(),
+  period_id uuid not null references public.activity_periods(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  rank int not null check (rank >= 1),
+  movie_title text not null,
+  movie_start_time time,
+  movie_duration_minutes int,
+  movie_genre text,
+  movie_watch_url text,
+  movie_description text,
+  movie_has_gore boolean not null default false,
+  submitted_at timestamptz,
+  created_at timestamptz default now(),
+  unique (user_id, period_id, rank)
+);
+
+create index period_movie_wishes_period_idx
+  on public.period_movie_wishes(period_id);
+
 -- 8. activity_assignments テーブル: 集計後の主催者と映画
 create table public.activity_assignments (
   date date primary key,
@@ -428,6 +450,7 @@ alter table public.activity_days enable row level security;
 alter table public.activity_attendances enable row level security;
 alter table public.activity_periods enable row level security;
 alter table public.date_preferences enable row level security;
+alter table public.period_movie_wishes enable row level security;
 alter table public.activity_assignments enable row level security;
 
 -- profiles: 認証済みユーザーは全員閲覧可
@@ -489,6 +512,10 @@ create policy "activity_periods_update_admin" on public.activity_periods
 
 -- date_preferences: 全員閲覧可、書き込みは set_my_preferences RPC 経由のみ
 create policy "date_preferences_select" on public.date_preferences
+  for select to authenticated using (true);
+
+-- period_movie_wishes: 全員閲覧可、書き込みは set_my_movie_wishes RPC 経由のみ
+create policy "period_movie_wishes_select" on public.period_movie_wishes
   for select to authenticated using (true);
 
 -- activity_assignments: 全員閲覧可、書き込みは RPC 経由のみ
