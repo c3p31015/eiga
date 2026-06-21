@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
@@ -15,6 +15,7 @@ type AuthContextType = {
   loading: boolean
   signIn: (username: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -23,6 +24,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  // 取得済みプロフィールのユーザーID。同一ユーザーの再取得を避ける。
+  const profileUserIdRef = useRef<string | null>(null)
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -35,19 +38,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
+      const u = session?.user ?? null
+      setUser(u)
+      profileUserIdRef.current = u?.id ?? null
+      if (u) {
+        fetchProfile(u.id)
       }
       setLoading(false)
     })
 
+    // タブ再フォーカス時などに Supabase が再発火する。
+    // 同じユーザーなら user の参照を維持し、不要な再取得・再描画を防ぐ。
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
+      const nextUser = session?.user ?? null
+      setUser((prev) => (prev?.id === nextUser?.id ? prev : nextUser))
+
+      if (!nextUser) {
+        profileUserIdRef.current = null
         setProfile(null)
+        return
+      }
+      // 実際にユーザーが変わったときだけプロフィールを取り直す
+      if (profileUserIdRef.current !== nextUser.id) {
+        profileUserIdRef.current = nextUser.id
+        fetchProfile(nextUser.id)
       }
     })
 
@@ -68,8 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null)
   }
 
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

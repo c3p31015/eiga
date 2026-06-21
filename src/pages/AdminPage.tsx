@@ -85,10 +85,10 @@ export default function AdminPage() {
       return
     }
     const periodId = idData as string
-    const [periodRes, prefRes, wishRes] = await Promise.all([
+    const [periodRes, dateRes, wishRes] = await Promise.all([
       supabase.from('activity_periods').select('*').eq('id', periodId).single(),
       supabase
-        .from('date_preferences')
+        .from('period_movie_dates')
         .select('user_id')
         .eq('period_id', periodId)
         .not('submitted_at', 'is', null),
@@ -98,11 +98,11 @@ export default function AdminPage() {
         .eq('period_id', periodId)
         .not('submitted_at', 'is', null),
     ])
-    const prefs = (prefRes.data as { user_id: string }[]) ?? []
+    const dates = (dateRes.data as { user_id: string }[]) ?? []
     const wishes = (wishRes.data as { user_id: string }[]) ?? []
     setStats({
-      submitters: new Set(prefs.map((p) => p.user_id)).size,
-      totalPrefs: prefs.length,
+      submitters: new Set(wishes.map((w) => w.user_id)).size,
+      totalPrefs: dates.length,
       movieTotal: wishes.length,
       period: (periodRes.data as ActivityPeriod) ?? null,
     })
@@ -230,10 +230,10 @@ export default function AdminPage() {
           sub={members.length > 0 ? `全${members.length}人中` : undefined}
         />
         <StatCard
-          label="希望件数"
+          label="候補日数"
           value={`${stats?.totalPrefs ?? '–'}`}
           unit="件"
-          sub={stats ? `映画 ${stats.movieTotal}件` : undefined}
+          sub={stats ? `映画 ${stats.movieTotal}本` : undefined}
         />
         <StatCard
           label="期間ステータス"

@@ -18,6 +18,8 @@ export type MovieWishPayload = {
   watchUrl: string
   description: string
   hasGore: boolean
+  // 観たいリスト由来の場合、その項目ID（上映確定時にリストから削除する来歴）
+  sourceWatchlistId: string | null
 }
 
 type Props = {
@@ -121,6 +123,8 @@ export default function MovieWishCard({
       watchUrl: watchUrl.trim(),
       description: description.trim(),
       hasGore,
+      // 来歴（リスト由来か）は編集しても維持する
+      sourceWatchlistId: payload.sourceWatchlistId,
     })
     setSaving(false)
     if (err) {
@@ -230,7 +234,7 @@ export default function MovieWishCard({
             </div>
 
             <label className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg px-3 py-2 cursor-pointer">
-              <span className="text-sm text-ink">グロい描写がある</span>
+              <span className="text-sm text-ink">グロ描写</span>
               <input
                 type="checkbox"
                 checked={hasGore}

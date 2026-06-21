@@ -52,7 +52,19 @@ export type DatePreference = {
   profiles?: { display_name: string } | null
 }
 
-// 観たい映画の希望（日付とは独立した順位付き）
+// 映画ごとの候補日（優先順・各日に開始時刻）
+export type PeriodMovieDate = {
+  id: string
+  period_id: string
+  user_id: string
+  movie_wish_id: string
+  date: string
+  priority: number
+  start_time: string | null
+  submitted_at: string | null
+}
+
+// 観たい映画の希望（rank は表示順 position として使う）
 export type MovieWish = {
   id: string
   period_id: string
@@ -65,6 +77,7 @@ export type MovieWish = {
   movie_watch_url: string | null
   movie_description: string | null
   movie_has_gore: boolean
+  source_watchlist_id: string | null
   submitted_at: string | null
   profiles?: { display_name: string } | null
 }

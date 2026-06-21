@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import CalendarPage from './pages/CalendarPage'
 import ApplicationPage from './pages/ApplicationPage'
+import MyPage from './pages/MyPage'
 import AdminPage from './pages/AdminPage'
 
 export default function App() {
@@ -20,6 +21,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <ApplicationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/me"
+              element={
+                <ProtectedRoute>
+                  <MyPage />
                 </ProtectedRoute>
               }
             />

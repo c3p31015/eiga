@@ -47,6 +47,23 @@ export function UsersIcon({ size = 22, className }: IconProps) {
   )
 }
 
+export function UserIcon({ size = 22, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  )
+}
+
+export function BookmarkIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
 export function LogOutIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size, className)}>
