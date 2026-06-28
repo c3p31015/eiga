@@ -7,6 +7,7 @@ import CalendarPage from './pages/CalendarPage'
 import ApplicationPage from './pages/ApplicationPage'
 import MyPage from './pages/MyPage'
 import AdminPage from './pages/AdminPage'
+import ApplicationListPage from './pages/ApplicationListPage'
 
 export default function App() {
   return (
@@ -29,6 +30,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <MyPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/applications"
+              element={
+                <ProtectedRoute viewerOrAdmin>
+                  <ApplicationListPage />
                 </ProtectedRoute>
               }
             />

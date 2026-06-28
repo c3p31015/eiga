@@ -86,6 +86,7 @@ export type ActivityAssignment = {
   date: string
   period_id: string
   host_user_id: string | null
+  movie_wish_id: string | null
   movie_title: string | null
   movie_description: string | null
   movie_duration_minutes: number | null

@@ -1,6 +1,6 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { CalendarIcon, FilmIcon, UsersIcon, UserIcon, LogOutIcon } from './icons'
+import { CalendarIcon, FilmIcon, UsersIcon, UserIcon, LogOutIcon, BookmarkIcon } from './icons'
 
 export default function Layout() {
   const { user, profile, signOut } = useAuth()
@@ -9,6 +9,10 @@ export default function Layout() {
   if (user) {
     navItems.push({ to: '/apply', label: '申請', icon: FilmIcon, end: false })
     navItems.push({ to: '/me', label: 'マイページ', icon: UserIcon, end: false })
+  }
+  // 閲覧者（管理者以外）には申請一覧への入口を出す。
+  if (profile?.is_viewer && !profile?.is_admin) {
+    navItems.push({ to: '/applications', label: '申請一覧', icon: BookmarkIcon, end: false })
   }
   if (profile?.is_admin) {
     navItems.push({ to: '/admin', label: '管理', icon: UsersIcon, end: false })

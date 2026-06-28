@@ -1,7 +1,16 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+export default function ProtectedRoute({
+  children,
+  adminOnly = false,
+  viewerOrAdmin = false,
+}: {
+  children: React.ReactNode
+  adminOnly?: boolean
+  // 管理者または閲覧者のみ許可（申請一覧の閲覧用）
+  viewerOrAdmin?: boolean
+}) {
   const { user, profile, loading } = useAuth()
 
   if (loading) {
@@ -17,6 +26,10 @@ export default function ProtectedRoute({ children, adminOnly = false }: { childr
   }
 
   if (adminOnly && !profile?.is_admin) {
+    return <Navigate to="/" replace />
+  }
+
+  if (viewerOrAdmin && !profile?.is_admin && !profile?.is_viewer) {
     return <Navigate to="/" replace />
   }
 

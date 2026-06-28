@@ -7,6 +7,7 @@ export type Member = {
   username: string
   display_name: string
   is_admin: boolean
+  is_viewer: boolean
 }
 
 type Props = {
@@ -41,6 +42,11 @@ export default function MemberRow({ member, isSelf, onChanged }: Props) {
           {member.is_admin && (
             <span className="inline-block px-2 py-0.5 text-[11px] font-semibold bg-accent/15 text-accent rounded-full border border-accent/30">
               管理者
+            </span>
+          )}
+          {!member.is_admin && member.is_viewer && (
+            <span className="inline-block px-2 py-0.5 text-[11px] font-semibold bg-ink-dim/15 text-ink-muted rounded-full border border-line">
+              閲覧者
             </span>
           )}
           <button
@@ -138,11 +144,16 @@ function RenameForm({
   const fieldId = useId()
   const displayNameId = `${fieldId}-display-name`
   const isAdminId = `${fieldId}-is-admin`
+  const isViewerId = `${fieldId}-is-viewer`
   const [displayName, setDisplayName] = useState(member.display_name)
   const [isAdmin, setIsAdmin] = useState(member.is_admin)
+  const [isViewer, setIsViewer] = useState(member.is_viewer)
   const [submitting, setSubmitting] = useState(false)
 
-  const dirty = displayName.trim() !== member.display_name || isAdmin !== member.is_admin
+  const dirty =
+    displayName.trim() !== member.display_name ||
+    isAdmin !== member.is_admin ||
+    isViewer !== member.is_viewer
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -156,6 +167,7 @@ function RenameForm({
       p_user_id: member.id,
       p_display_name: displayName.trim(),
       p_is_admin: isAdmin,
+      p_is_viewer: isViewer,
     })
     setSubmitting(false)
     if (error) {
@@ -196,6 +208,18 @@ function RenameForm({
             ※ 最後の管理者の場合は外せません
           </span>
         )}
+      </label>
+      <label htmlFor={isViewerId} className="flex items-center gap-2 cursor-pointer">
+        <input
+          id={isViewerId}
+          name="is_viewer"
+          type="checkbox"
+          checked={isViewer}
+          onChange={(e) => setIsViewer(e.target.checked)}
+          className="w-4 h-4 rounded border-line bg-bg text-accent focus:ring-accent/50"
+        />
+        <span className="text-sm text-ink">閲覧者権限</span>
+        <span className="text-[11px] text-ink-muted">※ 申請一覧の閲覧のみ</span>
       </label>
       <button
         type="submit"

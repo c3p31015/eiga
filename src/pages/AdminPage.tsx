@@ -19,6 +19,7 @@ type Profile = {
   username: string
   display_name: string
   is_admin: boolean
+  is_viewer: boolean
   created_at: string
 }
 
@@ -60,6 +61,7 @@ export default function AdminPage() {
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isViewer, setIsViewer] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -178,6 +180,7 @@ export default function AdminPage() {
         username: username.trim(),
         display_name: displayName.trim(),
         is_admin: isAdmin,
+        is_viewer: isViewer,
       })
 
       if (profileError) {
@@ -192,6 +195,7 @@ export default function AdminPage() {
     setDisplayName('')
     setPassword('')
     setIsAdmin(false)
+    setIsViewer(false)
     setSubmitting(false)
     fetchMembers()
   }
@@ -326,7 +330,7 @@ export default function AdminPage() {
                   placeholder="6文字以上"
                 />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-4">
                 <label className="flex items-center gap-2 cursor-pointer pb-2.5">
                   <input
                     type="checkbox"
@@ -335,6 +339,15 @@ export default function AdminPage() {
                     className="w-4 h-4 rounded border-line bg-bg text-accent focus:ring-accent/50"
                   />
                   <span className="text-sm text-ink">管理者権限を付与</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer pb-2.5">
+                  <input
+                    type="checkbox"
+                    checked={isViewer}
+                    onChange={(e) => setIsViewer(e.target.checked)}
+                    className="w-4 h-4 rounded border-line bg-bg text-accent focus:ring-accent/50"
+                  />
+                  <span className="text-sm text-ink">閲覧者権限を付与</span>
                 </label>
               </div>
             </div>

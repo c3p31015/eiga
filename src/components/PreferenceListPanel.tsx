@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import {
   type ActivityPeriod,
   type MovieWish,
@@ -9,6 +10,7 @@ import {
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  CheckIcon,
   ClockIcon,
   FilmIcon,
   TrashIcon,
@@ -21,6 +23,14 @@ type WishWithProfile = MovieWish & {
 }
 type DateRow = PeriodMovieDate & {
   profiles?: { display_name: string; username: string } | null
+}
+// 管理者の手動選択（予約）。公表はロック（集計）時まで保留される。
+type ManualAssignment = {
+  period_id: string
+  date: string
+  movie_date_id: string
+  movie_wish_id: string
+  user_id: string
 }
 
 type ViewMode = 'date' | 'member'
@@ -50,13 +60,21 @@ export default function PreferenceListPanel({
   onNextMonth,
   onThisMonth,
 }: PreferenceListPanelProps) {
+  const { profile } = useAuth()
+  // 管理者のみ手動操作（決定/解除/削除）・手動選択の閲覧が可能。
+  // 閲覧者は読み取り専用で、手動選択(予約)は RLS により取得できない。
+  const isAdmin = !!profile?.is_admin
+
   const [period, setPeriod] = useState<ActivityPeriod | null>(null)
   const [movies, setMovies] = useState<WishWithProfile[]>([])
   const [dates, setDates] = useState<DateRow[]>([])
+  const [reservations, setReservations] = useState<ManualAssignment[]>([])
   const [view, setView] = useState<ViewMode>('date')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingMovieId, setDeletingMovieId] = useState<string | null>(null)
+  const [decidingDate, setDecidingDate] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -72,7 +90,7 @@ export default function PreferenceListPanel({
     }
     const periodId = idData as string
 
-    const [periodRes, movieRes, dateRes] = await Promise.all([
+    const [periodRes, movieRes, dateRes, assignRes] = await Promise.all([
       supabase.from('activity_periods').select('*').eq('id', periodId).single(),
       supabase
         .from('period_movie_wishes')
@@ -87,6 +105,10 @@ export default function PreferenceListPanel({
         .not('submitted_at', 'is', null)
         .order('date', { ascending: true })
         .order('priority', { ascending: true }),
+      supabase
+        .from('period_manual_assignments')
+        .select('period_id, date, movie_date_id, movie_wish_id, user_id')
+        .eq('period_id', periodId),
     ])
 
     if (periodRes.error) {
@@ -97,6 +119,7 @@ export default function PreferenceListPanel({
     setPeriod(periodRes.data as ActivityPeriod)
     setMovies((movieRes.data as unknown as WishWithProfile[]) ?? [])
     setDates((dateRes.data as unknown as DateRow[]) ?? [])
+    setReservations((assignRes.data as unknown as ManualAssignment[]) ?? [])
     setLoading(false)
   }, [year, month])
 
@@ -129,7 +152,86 @@ export default function PreferenceListPanel({
     [fetchData]
   )
 
+  const handleDeleteMovie = useCallback(
+    async (movie: WishWithProfile) => {
+      const memberLabel = movie.profiles?.display_name ?? '(不明)'
+      if (
+        !confirm(
+          `${memberLabel} さんの映画「${movie.movie_title}」を削除しますか？\nこの映画の候補日もすべて削除されます。`
+        )
+      ) {
+        return
+      }
+      setDeletingMovieId(movie.id)
+      setError(null)
+      const { error: rpcError } = await supabase.rpc('admin_delete_movie_wish', {
+        p_id: movie.id,
+      })
+      setDeletingMovieId(null)
+      if (rpcError) {
+        setError(`削除に失敗しました: ${rpcError.message}`)
+        return
+      }
+      await fetchData()
+    },
+    [fetchData]
+  )
+
+  const handleAssign = useCallback(
+    async (row: DateRow, movieTitle: string) => {
+      const memberLabel = row.profiles?.display_name ?? '(不明)'
+      if (
+        !confirm(
+          `${formatDateLabel(row.date)} の主催を ${memberLabel} さんの「${movieTitle}」に決めますか？\n` +
+            'この日は自動抽選の対象外になります。\n公表は集計（締切）時で、それまでメンバーには表示されません。'
+        )
+      ) {
+        return
+      }
+      setDecidingDate(row.date)
+      setError(null)
+      const { error: rpcError } = await supabase.rpc('admin_assign_movie_date', {
+        p_movie_date_id: row.id,
+      })
+      setDecidingDate(null)
+      if (rpcError) {
+        setError(`確定に失敗しました: ${rpcError.message}`)
+        return
+      }
+      await fetchData()
+    },
+    [fetchData]
+  )
+
+  const handleClear = useCallback(
+    async (date: string) => {
+      if (!confirm(`${formatDateLabel(date)} の手動選択を取り消しますか？`)) {
+        return
+      }
+      setDecidingDate(date)
+      setError(null)
+      const { error: rpcError } = await supabase.rpc('admin_clear_assignment', {
+        p_date: date,
+      })
+      setDecidingDate(null)
+      if (rpcError) {
+        setError(`解除に失敗しました: ${rpcError.message}`)
+        return
+      }
+      await fetchData()
+    },
+    [fetchData]
+  )
+
   const periodLocked = !!period?.locked_at
+  // 編集（手動決定・解除・削除）は管理者かつ未ロックのときのみ。
+  const canEdit = isAdmin && !periodLocked
+
+  const reservationByDate = useMemo(() => {
+    const m = new Map<string, ManualAssignment>()
+    for (const r of reservations) m.set(r.date, r)
+    return m
+  }, [reservations])
 
   const movieById = useMemo(() => {
     const m = new Map<string, WishWithProfile>()
@@ -246,14 +348,23 @@ export default function PreferenceListPanel({
           <p className="text-sm text-ink-muted text-center py-6">この月の申請はまだありません</p>
         ) : view === 'date' ? (
           <div className="space-y-3">
+            {canEdit && (
+              <p className="text-[11px] text-ink-muted bg-bg border border-line rounded-lg px-3 py-2">
+                各日の「決定」で主催映画を手動で選べます。選んだ内容は<span className="text-ink">集計（締切）時に自動抽選と同時に公表</span>され、それまでメンバーには表示されません。
+              </p>
+            )}
             {byDate.map(([date, rows]) => (
               <DateGroup
                 key={date}
                 date={date}
                 rows={rows}
                 movieById={movieById}
-                onDelete={periodLocked ? null : handleDelete}
+                reservation={reservationByDate.get(date) ?? null}
+                onDelete={canEdit ? handleDelete : null}
+                onAssign={canEdit ? handleAssign : null}
+                onClear={canEdit ? handleClear : null}
                 deletingId={deletingId}
+                decidingDate={decidingDate}
               />
             ))}
           </div>
@@ -263,14 +374,16 @@ export default function PreferenceListPanel({
               <MemberGroup
                 key={m.username || m.name}
                 entry={m}
-                onDelete={periodLocked ? null : handleDelete}
+                onDelete={canEdit ? handleDelete : null}
+                onDeleteMovie={canEdit ? handleDeleteMovie : null}
                 deletingId={deletingId}
+                deletingMovieId={deletingMovieId}
               />
             ))}
           </div>
         )}
 
-        {periodLocked && (
+        {isAdmin && periodLocked && (
           <p className="text-[11px] text-ink-muted text-center">
             集計済み（ロック済み）の期間は削除できません。先にロック解除してください。
           </p>
@@ -301,31 +414,84 @@ function MovieMeta({ wish, showRank = false }: { wish: WishWithProfile; showRank
   )
 }
 
+type AssignHandler = ((row: DateRow, movieTitle: string) => void | Promise<void>) | null
+type ClearHandler = ((date: string) => void | Promise<void>) | null
+
 function DateGroup({
   date,
   rows,
   movieById,
+  reservation,
   onDelete,
+  onAssign,
+  onClear,
   deletingId,
+  decidingDate,
 }: {
   date: string
   rows: DateRow[]
   movieById: Map<string, WishWithProfile>
+  reservation: ManualAssignment | null
   onDelete: DeleteHandler
+  onAssign: AssignHandler
+  onClear: ClearHandler
   deletingId: string | null
+  decidingDate: string | null
 }) {
+  const decided = !!reservation
+  const decidedWishId = reservation?.movie_wish_id ?? null
+  // 選択中の映画・主催者・開始時刻は、候補(row)から解決する。
+  const winnerRow = decidedWishId != null
+    ? rows.find((r) => r.movie_wish_id === decidedWishId) ?? null
+    : null
+  const decidedMovie = decidedWishId != null ? movieById.get(decidedWishId) ?? null : null
+  const busy = decidingDate === date
+
   return (
     <div className="rounded-lg border border-line bg-bg overflow-hidden">
       <div className="px-3 py-2 bg-card border-b border-line flex items-baseline justify-between">
         <p className="text-sm font-bold text-ink">{formatDateLabel(date)}</p>
         <p className="text-[11px] text-ink-muted tabular-nums">{rows.length}本が候補</p>
       </div>
+
+      {reservation && (
+        <div className="px-3 py-2 bg-accent/10 border-b border-accent/30 flex items-center gap-2">
+          <CheckIcon size={14} className="text-accent shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-accent font-semibold">選択済み・公表は集計時</p>
+            <p className="text-sm text-ink truncate">
+              {winnerRow?.profiles?.display_name ?? '(不明)'}
+              <span className="text-ink-muted">・{decidedMovie?.movie_title ?? '映画未設定'}</span>
+              {winnerRow?.start_time && (
+                <span className="ml-1.5 text-[11px] text-ink-muted inline-flex items-center gap-0.5">
+                  <ClockIcon size={11} />
+                  {formatTimeShort(winnerRow.start_time)}
+                </span>
+              )}
+            </p>
+          </div>
+          {onClear && (
+            <button
+              onClick={() => onClear(date)}
+              disabled={busy}
+              className="shrink-0 px-2 py-1 rounded-md text-[11px] font-semibold text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              取消
+            </button>
+          )}
+        </div>
+      )}
+
       <ul className="divide-y divide-line">
         {rows.map((row) => {
           const movie = movieById.get(row.movie_wish_id)
           const start = formatTimeShort(row.start_time)
+          const isWinner = decidedWishId != null && row.movie_wish_id === decidedWishId
           return (
-            <li key={row.id} className="px-3 py-2 flex items-start gap-2">
+            <li
+              key={row.id}
+              className={`px-3 py-2 flex items-start gap-2 ${isWinner ? 'bg-accent/5' : ''}`}
+            >
               <span className="shrink-0 inline-flex items-center justify-center min-w-[2.75rem] px-1.5 h-6 rounded bg-accent/15 text-accent text-[11px] font-bold">
                 第{row.priority}
               </span>
@@ -341,7 +507,18 @@ function DateGroup({
                 </p>
                 {movie ? <div className="mt-0.5"><MovieMeta wish={movie} showRank /></div> : <p className="mt-0.5 text-[11px] text-ink-dim">映画情報なし</p>}
               </div>
-              {onDelete && (
+              {onAssign && !decided && (
+                <button
+                  onClick={() => onAssign(row, movie?.movie_title ?? '')}
+                  disabled={busy}
+                  title="この映画に確定"
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-accent border border-accent/30 hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <CheckIcon size={12} />
+                  決定
+                </button>
+              )}
+              {onDelete && !decided && (
                 <button
                   onClick={() => onDelete(row, movie?.movie_title ?? '')}
                   disabled={deletingId === row.id}
@@ -363,7 +540,9 @@ function DateGroup({
 function MemberGroup({
   entry,
   onDelete,
+  onDeleteMovie,
   deletingId,
+  deletingMovieId,
 }: {
   entry: {
     name: string
@@ -371,7 +550,9 @@ function MemberGroup({
     movies: { movie: WishWithProfile; dates: DateRow[] }[]
   }
   onDelete: DeleteHandler
+  onDeleteMovie: ((movie: WishWithProfile) => void | Promise<void>) | null
   deletingId: string | null
+  deletingMovieId: string | null
 }) {
   const dateCount = entry.movies.reduce((s, m) => s + m.dates.length, 0)
   return (
@@ -389,7 +570,22 @@ function MemberGroup({
       <ul className="px-3 py-2 space-y-2.5">
         {entry.movies.map(({ movie, dates }) => (
           <li key={movie.id}>
-            <MovieMeta wish={movie} showRank />
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <MovieMeta wish={movie} showRank />
+              </div>
+              {onDeleteMovie && (
+                <button
+                  onClick={() => onDeleteMovie(movie)}
+                  disabled={deletingMovieId === movie.id}
+                  aria-label="この映画を削除"
+                  title="この映画を削除（候補日も削除）"
+                  className="shrink-0 p-1 rounded-md text-ink-muted hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <TrashIcon size={14} />
+                </button>
+              )}
+            </div>
             {dates.length === 0 ? (
               <p className="mt-1 text-[11px] text-ink-dim">候補日なし</p>
             ) : (

@@ -7,6 +7,7 @@ type Profile = {
   username: string
   display_name: string
   is_admin: boolean
+  is_viewer: boolean
 }
 
 type AuthContextType = {
